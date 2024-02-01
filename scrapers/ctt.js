@@ -93,7 +93,15 @@
 			update.status = {
 				type: "delivered",
 				data: {
-					description: recString.replace(/^Entregue\s+a:\s+/, "").trim()
+					description: recString,
+					to: recString.replace(/^Entregue\s+a:\s+/, "").trim()
+				}
+			};
+		} else if (update.title === "Em entrega") {
+			update.status = {
+				type: "delivering",
+				data: {
+					description: update.description
 				}
 			};
 		} else if ((update.title === "No ponto de entrega") &&
