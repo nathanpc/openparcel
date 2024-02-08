@@ -1,12 +1,5 @@
 (function () {
-	let data = {
-		trackingCode: null,
-		trackingUrl: window.location.href,
-		creationDate: null,
-		status: null,
-		destination: null,
-		history: []
-	};
+	let data = OpenParcel.data.create();
 
 	// Converts a portuguese month name to month number.
 	const getMonthPT = function (monthName) {
@@ -55,13 +48,11 @@
 		const content = item.querySelector("[id*=TimelineContent] [id*=Content]");
 		const dtHtml = item.querySelectorAll("[id*=Left] [data-expression]");
 
-		let update = {
-			title: item.querySelector("[id*=TimelineContent] [id*=Title] [data-expression]").innerText.trim(),
-			description: content.querySelector("[id*='Event'] [data-expression]").innerText.trim(),
-			location: content.querySelector("[id*='Location'] [data-expression]").innerText.trim(),
-			timestamp: null,
-			status: null
-		};
+		let update = OpenParcel.data.createUpdate(
+			item.querySelector("[id*=TimelineContent] [id*=Title] [data-expression]").innerText.trim(),
+			content.querySelector("[id*='Event'] [data-expression]").innerText.trim(), {
+			location: content.querySelector("[id*='Location'] [data-expression]").innerText.trim()
+		});
 
 		// Deal with the timestamp mess.
 		let year = creationDate.getUTCFullYear();
@@ -79,42 +70,26 @@
 
 		// Check for problems.
 		if (!content.querySelector("[id*='Reason'] [data-expression]").classList.contains("display-container-none")) {
-			update.status = {
-				type: "issue",
-				data: {
-					description: content.querySelector("[id*='Reason'] [data-expression]").innerText.replace(/^Motivo:\s+/, "").trim()
-				}
-			};
+			update.status = OpenParcel.data.createStatus("issue",
+				content.querySelector("[id*='Reason'] [data-expression]").innerText.replace(/^Motivo:\s+/, "").trim());
 		}
 
 		// Check if it was delivered.
 		if (update.title === "Entregue") {
 			const recString = content.querySelector("[id*='FormatName'] [data-expression]").innerText.trim();
-			update.status = {
-				type: "delivered",
-				data: {
-					description: recString,
-					to: recString.replace(/^Entregue\s+a:\s+/, "").trim()
-				}
-			};
+			update.status = OpenParcel.data.createStatus("delivered", recString, {
+				to: recString.replace(/^Entregue\s+a:\s+/, "").trim()
+			});
 		} else if (update.title === "Em entrega") {
-			update.status = {
-				type: "delivering",
-				data: {
-					description: update.description
-				}
-			};
+			update.status = OpenParcel.data.createStatus("delivering",
+				update.description);
 		} else if ((update.title === "No ponto de entrega") &&
 				update.description.includes("disponível para levantamento")) {
 			const locString = content.querySelector("[id*='Location'] [data-expression]").innerText.trim();
-			update.status = {
-				type: "pickup",
-				data: {
-					description: locString,
-					location: locString.split(" até ")[0],
-					until: null
-				}
-			};
+			update.status = OpenParcel.data.createStatus("pickup", locString, {
+				location: locString.split(" até ")[0],
+				until: null
+			});
 
 			// Calculate the until date.
 			let until = timestamp;
@@ -124,20 +99,12 @@
 				until.setUTCFullYear(until.getUTCFullYear() + 1);
 			update.status.data.until = until.toISOString();
 		} else if (update.title === "Aceite") {
-			update.status = {
-				type: "posted",
-				data: {
-					description: update.description
-				}
-			};
+			update.status = OpenParcel.data.createStatus("posted",
+				update.description);
 		} else if (update.title === "Aguarda entrada nos CTT") {
-			update.status = {
-				type: "created",
-				data: {
-					description: update.description,
-					timestamp: creationDate.toISOString()
-				}
-			};
+			update.status = OpenParcel.data.createStatus("created", update.description, {
+				timestamp: creationDate.toISOString()
+			});
 		}
 
 		return update;
@@ -145,13 +112,9 @@
 
 	// Get easy label information.
 	data.trackingCode = document.querySelector("[id*=ObjectCodeContainer] [data-expression]").innerText.trim();
-	data.destination = {
-		addressLine: null,
-		city: document.querySelector("[data-block='TrackTrace.TT_ProductDestination_New'] [data-expression]").innerText.trim(),
-		state: null,
-		postalCode: null,
-		country: null
-	};
+	data.destination = OpenParcel.data.createAddress({
+		city: document.querySelector("[data-block='TrackTrace.TT_ProductDestination_New'] [data-expression]").innerText.trim()
+	});
 
 	// Get the package creation date.
 	const creationDate = (function (dtString) {
