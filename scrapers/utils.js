@@ -5,42 +5,46 @@
  * @author Nathan Campos <nathan@innoveworkshop.com>
  */
 
-/**
- * Waits for an element to exist.
- *
- * @param selector Query selector for the element to wait for.
- *
- * @returns {Promise<Element>} Promise of the loaded element.
- */
-function waitForElement(selector) {
-	return new Promise(resolve => {
-		if (document.querySelector(selector)) {
-			return resolve(document.querySelector(selector));
-		}
+"use strict";
 
-		const observer = new MutationObserver(mutations => {
+window.OpenParcel = {
+	/**
+	 * Waits for an element to exist.
+	 *
+	 * @param selector Query selector for the element to wait for.
+	 *
+	 * @returns {Promise<Element>} Promise of the loaded element.
+	 */
+	waitForElement(selector) {
+		return new Promise(resolve => {
 			if (document.querySelector(selector)) {
-				observer.disconnect();
-				resolve(document.querySelector(selector));
+				return resolve(document.querySelector(selector));
 			}
-		});
 
-		// If you get "parameter 1 is not of type 'Node'" error, see
-        // https://stackoverflow.com/a/77855838/492336
-		observer.observe(document.body, {
-			childList: true,
-			subtree: true
-		});
-	});
-}
+			const observer = new MutationObserver(mutations => {
+				if (document.querySelector(selector)) {
+					observer.disconnect();
+					resolve(document.querySelector(selector));
+				}
+			});
 
-/**
- * Notifies the engine that an element has finally been loaded into the page.
- *
- * @param selector Query selector for the element to wait for.
- */
-function notifyElementLoaded(selector) {
-    waitForElement(selector).then(function (elem) {
-        alert("READY!");
-    });
-}
+			// If you get "parameter 1 is not of type 'Node'" error, see
+	        // https://stackoverflow.com/a/77855838/492336
+			observer.observe(document.body, {
+				childList: true,
+				subtree: true
+			});
+		});
+	},
+
+	/**
+	 * Notifies the engine that an element has finally been loaded into the page.
+	 *
+	 * @param selector Query selector for the element to wait for.
+	 */
+	notifyElementLoaded(selector) {
+	    this.waitForElement(selector).then(function (elem) {
+	        alert("READY!");
+	    });
+	}
+};

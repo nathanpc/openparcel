@@ -91,7 +91,7 @@ class BrowserBaseCarrier(BaseCarrier):
         loaded in via shitty frameworks such as React. This method will use some
         hacks to determine when a specific element (selected using a Javascript
         query string) has been loaded into the DOM."""
-        self.page.run_js_loaded(f'notifyElementLoaded(\'{elem}\');')
+        self.page.run_js_loaded(f'OpenParcel.notifyElementLoaded(\'{elem}\');')
         alert_text = self.page.handle_alert(accept=True, timeout=5)
 
         # Check if the dialog box was actually the one we were expecting.
