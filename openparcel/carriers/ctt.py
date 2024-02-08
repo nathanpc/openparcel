@@ -4,12 +4,15 @@ from openparcel.carriers.base import BrowserBaseCarrier
 
 
 class CarrierCTT(BrowserBaseCarrier):
+    uid = 'ctt'
+    name = 'CTT'
+    tracking_url_base = \
+        'https://appserver.ctt.pt/CustomerArea/PublicArea_Detail?' \
+        'ObjectCodeInput=${tracking_code}&SearchInput=${tracking_code}'
+    accent_color = '#DE0024'
+
     def __init__(self, tracking_code: str = None):
-        super().__init__('ctt', 'CTT',
-                         'https://appserver.ctt.pt/CustomerArea/PublicArea_Detail?'
-                         'ObjectCodeInput=${tracking_code}&SearchInput=${tracking_code}',
-                         tracking_code)
-        self.accent_color = '#DE0024'
+        super().__init__(tracking_code)
 
     def fetch(self):
         try:

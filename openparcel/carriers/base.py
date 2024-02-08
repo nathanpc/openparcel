@@ -2,8 +2,7 @@
 
 from os.path import abspath, dirname, exists
 from string import Template
-from typing import Union
-import json
+from typing import Optional
 
 from DrissionPage import ChromiumPage
 
@@ -12,15 +11,15 @@ from openparcel.exceptions import TrackingCodeNotFound, ScrapingJsNotFound
 
 class BaseCarrier:
     """Base class for all carriers in the system."""
+    uid: str = None
+    name: str = None
+    tracking_url_base: str = None
+    accent_color: str = '#D6BC9C'
 
-    def __init__(self, uid: str, name: str, tracking_url: str,
-                 tracking_code: str = None):
-        self.uid: str = uid
-        self.name: str = name
-        self.tracking_url: Template = Template(tracking_url)
+    def __init__(self, tracking_code: str = None):
+        self.tracking_url: Template = Template(self.tracking_url_base)
         self.tracking_code: str = tracking_code
-        self.accent_color: str = '#D6BC9C'
-        self._resp_dict: Union[dict, None] = None
+        self._resp_dict: Optional[dict] = None
 
     def get_tracking_url(self) -> str:
         """Gets the tracking URL for the carrier based on the available
@@ -48,12 +47,11 @@ class BrowserBaseCarrier(BaseCarrier):
     """Base class for carriers that require the use of a full web browser to
     scrape."""
 
-    def __init__(self, uid: str, name: str, tracking_url: str,
-                 tracking_code: str = None):
-        super().__init__(uid, name, tracking_url, tracking_code)
+    def __init__(self, tracking_code: str = None):
+        super().__init__(tracking_code)
 
         from DrissionPage import ChromiumPage
-        self.page: Union[ChromiumPage, None] = None
+        self.page: Optional[ChromiumPage] = None
 
     def _fetch_page(self):
         """Sets up the scraping web browser and begins fetching the carrier's
