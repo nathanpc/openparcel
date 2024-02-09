@@ -4,7 +4,7 @@ from os.path import abspath, dirname, exists
 from string import Template
 from typing import Optional
 
-from DrissionPage import ChromiumPage
+from DrissionPage import ChromiumPage, ChromiumOptions
 
 from openparcel.exceptions import TrackingCodeNotFound, ScrapingJsNotFound
 
@@ -58,7 +58,8 @@ class BrowserBaseCarrier(BaseCarrier):
         tracking page."""
         # Get a new browser for us to play around with if needed.
         if self.page is None:
-            self.page = ChromiumPage()
+            opts = ChromiumOptions().auto_port()
+            self.page = ChromiumPage(addr_or_opts=opts)
 
         # Get the tracking website.
         self.page.get(self.get_tracking_url())
