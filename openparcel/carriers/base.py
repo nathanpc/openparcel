@@ -63,13 +63,17 @@ class BrowserBaseCarrier(BaseCarrier):
 
         # Get the tracking website.
         self.page.get(self.get_tracking_url())
-        self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
+        self._load_utils_js()
 
     def _close_page(self):
         """Closes the scraping web browser instance and cleans up any temporary
         resources."""
         self.page.close()
         self.page = None
+
+    def _load_utils_js(self):
+        """Loads the common scraping utilities script into the page."""
+        self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
 
     def _get_scraping_js(self, name: str = None) -> str:
         """Gets the Javascript script to run in order to scrape the web page."""
