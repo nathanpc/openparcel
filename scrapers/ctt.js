@@ -48,11 +48,18 @@
 		const content = item.querySelector("[id*=TimelineContent] [id*=Content]");
 		const dtHtml = item.querySelectorAll("[id*=Left] [data-expression]");
 
-		let update = OpenParcel.data.createUpdate(
-			item.querySelector("[id*=TimelineContent] [id*=Title] [data-expression]").innerText.trim(),
-			content.querySelector("[id*='Event'] [data-expression]").innerText.trim(), {
-			location: content.querySelector("[id*='Location'] [data-expression]").innerText.trim()
-		});
+		// Create the update object.
+		const update = OpenParcel.data.createUpdate(
+			item.querySelector("[id*=TimelineContent] [id*=Title] [data-expression]").innerText,
+			content.querySelector("[id*='Event'] [data-expression]").innerText);
+
+		// Get the update location.
+		const upAddress = content.querySelector("[id*='Location'] [data-expression]").innerText;
+		if ((upAddress.length > 0) && isNaN(Number(upAddress))) {
+			update.location = OpenParcel.data.createAddress({
+				addressLine: upAddress
+			});
+		}
 
 		// Deal with the timestamp mess.
 		let year = creationDate.getUTCFullYear();
@@ -87,7 +94,9 @@
 				update.description.includes("disponível para levantamento")) {
 			const locString = content.querySelector("[id*='Location'] [data-expression]").innerText.trim();
 			update.status = OpenParcel.data.createStatus("pickup", locString, {
-				location: locString.split(" até ")[0],
+				location: OpenParcel.data.createAddress({
+					addressLine: locString.split(" até ")[0]
+				}),
 				until: null
 			});
 

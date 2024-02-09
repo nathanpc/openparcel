@@ -12,8 +12,13 @@ window.OpenParcel = {
 		/**
 		 * Creates a brand new data object.
 		 *
-		 * @returns {{trackingUrl: string, destination: null,
-		 *           trackingCode: string, history: *[], creationDate: string,
+		 * @returns {{trackingUrl: string, origin: {country: string|null,
+		 *           city: string|null, postalCode: string|null,
+		 *           state: string|null, addressLine: string|null}|null,
+		 *           destination: {country: string|null, city: string|null,
+		 *           postalCode: string|null, state: string|null,
+		 *           addressLine: string|null}|null, trackingCode: string,
+		 *           history: *[], creationDate: string,
 		 *           status: {data: {description: string}, type: string}}}
 		 */
 		create() {
@@ -22,6 +27,7 @@ window.OpenParcel = {
 				trackingUrl: window.location.href,
 				creationDate: null,
 				status: null,
+				origin: null,
 				destination: null,
 				history: []
 			};
@@ -34,8 +40,10 @@ window.OpenParcel = {
 		 * @param {string} description Detailed description.
 		 * @param          [info]      Optional properties of the object.
 		 *
-		 * @returns {{description: string, location: string, title: string,
-		 *           timestamp: string, status: null}}
+		 * @returns {{description: string, location: {country: string|null,
+		 *           city: string|null, postalCode: string|null,
+		 *           state: string|null, addressLine: string|null},
+		 *           title: string, timestamp: string, status: null}}
 		 *          OpenParcel tracking history update object.
 		 */
 		createUpdate(title, description, info) {
@@ -88,7 +96,7 @@ window.OpenParcel = {
 		/**
 		 * Creates a brand new address object.
 		 *
-		 * @param info Information to be populated into the address object.
+		 * @param [info] Information to be populated into the address object.
 		 *
 		 * @returns {{country: string|null, city: string|null,
 		 *           postalCode: string|null, state: string|null,
