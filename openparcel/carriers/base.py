@@ -87,13 +87,13 @@ class BrowserBaseCarrier(BaseCarrier):
         with open(filepath, mode='r', encoding='utf-8') as f:
             return f.read()
 
-    def _wait_page_complete(self, elem: str):
+    def _wait_page_complete(self, elem: str, timeout: float = 5):
         """Waits until a page is completely loaded, including garbage that was
         loaded in via shitty frameworks such as React. This method will use some
         hacks to determine when a specific element (selected using a Javascript
         query string) has been loaded into the DOM."""
         self.page.run_js_loaded(f'OpenParcel.notifyElementLoaded(\'{elem}\');')
-        alert_text = self.page.handle_alert(accept=True, timeout=5)
+        alert_text = self.page.handle_alert(accept=True, timeout=timeout)
 
         # Check if the dialog box was actually the one we were expecting.
         if alert_text != "READY!":
