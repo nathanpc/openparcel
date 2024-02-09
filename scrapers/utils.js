@@ -123,6 +123,88 @@ window.OpenParcel = {
 		}
 	},
 
+	calendar: {
+		getMonth(monthName) {
+			switch (monthName) {
+				case 'Jan':
+				case 'January':
+					return 0;
+				case 'Feb':
+				case 'February':
+					return 1;
+				case 'Mar':
+				case 'March':
+					return 2;
+				case 'Apr':
+				case 'April':
+					return 3;
+				case 'May':
+					return 4;
+				case 'Jun':
+				case 'June':
+					return 5;
+				case 'Jul':
+				case 'July':
+					return 6;
+				case 'Aug':
+				case 'August':
+					return 7;
+				case 'Sep':
+				case 'September':
+					return 8;
+				case 'Oct':
+				case 'October':
+					return 9;
+				case 'Nov':
+				case 'November':
+					return 10;
+				case 'Dec':
+				case 'December':
+					return 11;
+			}
+		},
+		getMonthPT(monthName) {
+			switch (monthName) {
+				case 'Jan':
+				case 'Janeiro':
+					return 0;
+				case 'Fev':
+				case 'Fevereiro':
+					return 1;
+				case 'Mar':
+				case 'Março':
+					return 2;
+				case 'Abr':
+				case 'Abril':
+					return 3;
+				case 'Mai':
+				case 'Maio':
+					return 4;
+				case 'Jun':
+				case 'Junho':
+					return 5;
+				case 'Jul':
+				case 'Julho':
+					return 6;
+				case 'Ago':
+				case 'Agosto':
+					return 7;
+				case 'Set':
+				case 'Setembro':
+					return 8;
+				case 'Out':
+				case 'Outubro':
+					return 9;
+				case 'Nov':
+				case 'Novembro':
+					return 10;
+				case 'Dez':
+				case 'Dezembro':
+					return 11;
+			}
+		}
+	},
+
 	/**
 	 * Waits for an element to exist.
 	 *

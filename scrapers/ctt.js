@@ -1,48 +1,6 @@
 (function () {
 	let data = OpenParcel.data.create();
 
-	// Converts a portuguese month name to month number.
-	const getMonthPT = function (monthName) {
-		switch (monthName) {
-			case 'Jan':
-			case 'Janeiro':
-				return 0;
-			case 'Fev':
-			case 'Fevereiro':
-				return 1;
-			case 'Mar':
-			case 'Março':
-				return 2;
-			case 'Abr':
-			case 'Abril':
-				return 3;
-			case 'Mai':
-			case 'Maio':
-				return 4;
-			case 'Jun':
-			case 'Junho':
-				return 5;
-			case 'Jul':
-			case 'Julho':
-				return 6;
-			case 'Ago':
-			case 'Agosto':
-				return 7;
-			case 'Set':
-			case 'Setembro':
-				return 8;
-			case 'Out':
-			case 'Outubro':
-				return 9;
-			case 'Nov':
-			case 'Novembro':
-				return 10;
-			case 'Dez':
-			case 'Dezembro':
-				return 11;
-		}
-	};
-
 	// Parses a tracking history item.
 	const parseHistoryItem = function (item, creationDate) {
 		const content = item.querySelector("[id*=TimelineContent] [id*=Content]");
@@ -63,7 +21,7 @@
 
 		// Deal with the timestamp mess.
 		let year = creationDate.getUTCFullYear();
-		const monthIndex = getMonthPT(dtHtml[0].innerText.split(" ")[1]);
+		const monthIndex = OpenParcel.calendar.getMonthPT(dtHtml[0].innerText.split(" ")[1]);
 		if (monthIndex < creationDate.getUTCMonth())
 			year++;
 		const timestamp = new Date(
@@ -102,7 +60,8 @@
 
 			// Calculate the until date.
 			let until = timestamp;
-			until.setUTCMonth(getMonthPT(locString.split(" até ")[1].split(" ")[1]),
+			until.setUTCMonth(
+				OpenParcel.calendar.getMonthPT(locString.split(" até ")[1].split(" ")[1]),
 				Number(locString.split(" até ")[1].split(" ")[0]));
 			if (until.getUTCMonth() < timestamp.getUTCMonth())
 				until.setUTCFullYear(until.getUTCFullYear() + 1);
@@ -130,7 +89,7 @@
 		const match = dtString.trim().match(/(\d+) (\w+) (\d+), (\d+)h(\d+)/);
 		return new Date(
 			Number(match[3]),      // Year
-			getMonthPT(match[2]),  // Month
+			OpenParcel.calendar.getMonthPT(match[2]),  // Month
 			Number(match[1]),      // Day
 			Number(match[4]),      // Hours
 			Number(match[5])       // Minutes
