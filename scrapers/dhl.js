@@ -53,41 +53,29 @@
 		if (update.title.endsWith("."))
 			update.title = update.title.slice(0, -1)
 
-		/*
 		// Check if it was delivered.
-		if (update.title === "Entregue") {
-			const recString = content.querySelector("[id*='FormatName'] [data-expression]").innerText.trim();
-			update.status = OpenParcel.data.createStatus("delivered", recString, {
-				to: recString.replace(/^Entregue\s+a:\s+/, "").trim()
-			});
-		} else if (update.title === "Em entrega") {
+		if (update.title.includes("Delivered") || update.title.includes("Delivery successful")) {
+			update.status = OpenParcel.data.createStatus("delivered",
+				update.title);
+		} else if (update.title.includes("Being delivered") || update.title.includes("with courier")) {
 			update.status = OpenParcel.data.createStatus("delivering",
-				update.description);
-		} else if ((update.title === "No ponto de entrega") &&
-				update.description.includes("disponível para levantamento")) {
-			const locString = content.querySelector("[id*='Location'] [data-expression]").innerText.trim();
-			update.status = OpenParcel.data.createStatus("pickup", locString, {
-				location: locString.split(" até ")[0],
-				until: null
-			});
-
-			// Calculate the until date.
-			let until = timestamp;
-			until.setUTCMonth(
-				OpenParcel.calendar.getMonthPT(locString.split(" até ")[1].split(" ")[1]),
-				Number(locString.split(" até ")[1].split(" ")[0]));
-			if (until.getUTCMonth() < timestamp.getUTCMonth())
-				until.setUTCFullYear(until.getUTCFullYear() + 1);
-			update.status.data.until = until.toISOString();
-		} else if (update.title === "Aceite") {
+				update.title);
+		} else if (update.title.includes("picked up") || update.title.includes("posted")) {
 			update.status = OpenParcel.data.createStatus("posted",
-				update.description);
-		} else if (update.title === "Aguarda entrada nos CTT") {
-			update.status = OpenParcel.data.createStatus("created", update.description, {
-				timestamp: creationDate.toISOString()
-			});
+				update.title);
+		} else if (update.title.includes("electronically")) {
+			update.status = OpenParcel.data.createStatus("created",
+				update.title);
+		} else if (update.title.includes("Clearance processing complete")) {
+			update.status = OpenParcel.data.createStatus("customs-cleared`",
+				update.title);
+		} else if (update.title.includes("Delivery not possible")) {
+			update.status = OpenParcel.data.createStatus("delivery-attempt",
+				update.title);
+		} else if (update.title.includes("on hold")) {
+			update.status = OpenParcel.data.createStatus("issue",
+				update.title);
 		}
-		*/
 
 		return update;
 	};
