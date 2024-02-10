@@ -55,8 +55,9 @@
 
 		// Check if it was delivered.
 		if (update.title.includes("Delivered") || update.title.includes("Delivery successful")) {
-			update.status = OpenParcel.data.createStatus("delivered",
-				update.title);
+			update.status = OpenParcel.data.createStatus("delivered", update.title, {
+				to: null
+			});
 		} else if (update.title.includes("Being delivered") || update.title.includes("with courier")) {
 			update.status = OpenParcel.data.createStatus("delivering",
 				update.title);
@@ -64,8 +65,9 @@
 			update.status = OpenParcel.data.createStatus("posted",
 				update.title);
 		} else if (update.title.includes("electronically")) {
-			update.status = OpenParcel.data.createStatus("created",
-				update.title);
+			update.status = OpenParcel.data.createStatus("created", update.title, {
+				timestamp: null
+			});
 		} else if (update.title.includes("Clearance processing complete")) {
 			update.status = OpenParcel.data.createStatus("customs-cleared`",
 				update.title);

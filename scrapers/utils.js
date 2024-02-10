@@ -14,10 +14,12 @@ window.OpenParcel = {
 		 *
 		 * @returns {{trackingUrl: string, origin: {country: string|null,
 		 *           city: string|null, postalCode: string|null,
-		 *           state: string|null, addressLine: string|null}|null,
+		 *           state: string|null, addressLine: string|null,
+		 *           coords: {lat: Number|null, lng: Number|null}}|null,
 		 *           destination: {country: string|null, city: string|null,
 		 *           postalCode: string|null, state: string|null,
-		 *           addressLine: string|null}|null, trackingCode: string,
+		 *           addressLine: string|null, coords: {lat: Number|null,
+		 *           lng: Number|null}}|null, trackingCode: string,
 		 *           history: *[], creationDate: string,
 		 *           status: {data: {description: string}, type: string}}}
 		 */
@@ -42,7 +44,8 @@ window.OpenParcel = {
 		 *
 		 * @returns {{description: string|null, location: {country: string|null,
 		 *           city: string|null, postalCode: string|null,
-		 *           state: string|null, addressLine: string|null},
+		 *           state: string|null, addressLine: string|null,
+		 *           coords: {lat: Number|null, lng: Number|null}},
 		 *           title: string, timestamp: string, status: null}}
 		 *          OpenParcel tracking history update object.
 		 */
@@ -100,7 +103,8 @@ window.OpenParcel = {
 		 *
 		 * @returns {{country: string|null, city: string|null,
 		 *           postalCode: string|null, state: string|null,
-		 *           addressLine: string|null}}
+		 *           addressLine: string|null, coords: {lat: Number|null,
+		 *           lng: Number|null}}}
 		 *          OpenParcel address object.
 		 */
 		createAddress(info) {
@@ -109,7 +113,11 @@ window.OpenParcel = {
 				city: null,
 				state: null,
 				postalCode: null,
-				country: null
+				country: null,
+				coords: {
+					lat: null,
+					lng: null
+				}
 			};
 
 			// Set some of the properties.
