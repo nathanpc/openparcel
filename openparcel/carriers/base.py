@@ -49,8 +49,6 @@ class BrowserBaseCarrier(BaseCarrier):
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)
-
-        from DrissionPage import ChromiumPage
         self.page: Optional[ChromiumPage] = None
 
     def _fetch_page(self):
@@ -58,7 +56,10 @@ class BrowserBaseCarrier(BaseCarrier):
         tracking page."""
         # Get a new browser for us to play around with if needed.
         if self.page is None:
-            opts = ChromiumOptions().auto_port()
+            opts = ChromiumOptions()
+            opts.auto_port()
+            opts.set_argument('--ignore-certificate-errors')
+
             self.page = ChromiumPage(addr_or_opts=opts)
 
         # Get the tracking website.
