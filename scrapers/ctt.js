@@ -107,5 +107,5 @@
 	if (data.history.length > 0)
 		data.status = data.history[0].status;
 
-	return data;
+	return OpenParcel.data.finalTouches(data);
 })();

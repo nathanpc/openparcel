@@ -36,11 +36,11 @@ window.OpenParcel = {
 		/**
 		 * Creates a brand new tracking history update object.
 		 *
-		 * @param {string} title       Very brief description.
-		 * @param {string} description Detailed description.
-		 * @param          [info]      Optional properties of the object.
+		 * @param {string}      title       Very brief description.
+		 * @param {string|null} description Detailed description.
+		 * @param               [info]      Optional properties of the object.
 		 *
-		 * @returns {{description: string, location: {country: string|null,
+		 * @returns {{description: string|null, location: {country: string|null,
 		 *           city: string|null, postalCode: string|null,
 		 *           state: string|null, addressLine: string|null},
 		 *           title: string, timestamp: string, status: null}}
@@ -120,6 +120,24 @@ window.OpenParcel = {
 			}
 
 			return address;
+		},
+
+		/**
+		 * Applies some final touches to the data object before it's returned to
+		 * the server.
+		 *
+		 * @param data OpenParcel data object to be treated.
+		 *
+		 * @return Properly prepared OpenParcel data object for the server.
+		 */
+		finalTouches(data) {
+			// Ensure the history is ordered from newest to oldest.
+			data.history.sort(function (a, b) {
+				return (new Date(b.timestamp).getTime()) -
+					(new Date(a.timestamp).getTime());
+			});
+
+			return data;
 		}
 	},
 
