@@ -126,16 +126,19 @@ window.OpenParcel = {
 		 * Applies some final touches to the data object before it's returned to
 		 * the server.
 		 *
-		 * @param data OpenParcel data object to be treated.
+		 * @param           data        OpenParcel data object to be treated.
+		 * @param {boolean} [forceSort] Should we forcefully sort the history?
 		 *
 		 * @return Properly prepared OpenParcel data object for the server.
 		 */
-		finalTouches(data) {
-			// Ensure the history is ordered from newest to oldest.
-			data.history.sort(function (a, b) {
-				return (new Date(b.timestamp).getTime()) -
-					(new Date(a.timestamp).getTime());
-			});
+		finalTouches(data, forceSort) {
+			if ((forceSort !== undefined) && forceSort) {
+				// Ensure the history is ordered from newest to oldest.
+				data.history.sort(function (a, b) {
+					return (new Date(b.timestamp).getTime()) -
+						(new Date(a.timestamp).getTime());
+				});
+			}
 
 			return data;
 		}
