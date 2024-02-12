@@ -1,0 +1,4 @@
+---
+SECRET_KEY: 'please change me'
+DEBUG: true
+DB_HOST: 'openparcel.db'
