@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import datetime
+
 from os.path import abspath, dirname, exists
 from string import Template
 from typing import Optional
@@ -19,6 +21,8 @@ class BaseCarrier:
     def __init__(self, tracking_code: str = None):
         self.tracking_url: Template = Template(self.tracking_url_base)
         self.tracking_code: str = tracking_code
+        self.last_updated: datetime.datetime = datetime.datetime.now(
+            datetime.UTC)
         self._resp_dict: Optional[dict] = None
 
     def get_tracking_url(self) -> str:
@@ -36,11 +40,22 @@ class BaseCarrier:
         """Fetches tracking updates from the carrier's tracking website."""
         raise NotImplementedError
 
-    def _create_resp_dict(self, json_resp: dict):
+    def get_resp_dict(self) -> dict:
         """Creates the response dictionary with all the information gathered
         for the parcel."""
-        self._resp_dict = json_resp
-        self._resp_dict['accentColor'] = self.accent_color
+        resp = self._resp_dict
+
+        # Add additional information to object.
+        resp['accentColor'] = self.accent_color
+        resp['cached'] = self.cached
+        resp['lastUpdated'] = self.last_updated.isoformat()
+
+        return resp
+
+    def _scrape(self):
+        """Scrapes the tracking information and stores the results
+        internally."""
+        raise NotImplementedError
 
 
 class BrowserBaseCarrier(BaseCarrier):
@@ -50,6 +65,10 @@ class BrowserBaseCarrier(BaseCarrier):
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)
         self.page: Optional[ChromiumPage] = None
+
+    def _scrape(self):
+        self._resp_dict = self.page.run_js_loaded(self._get_scraping_js(),
+                                                  as_expr=True)
 
     def _fetch_page(self):
         """Sets up the scraping web browser and begins fetching the carrier's

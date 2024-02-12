@@ -19,8 +19,7 @@ class CarrierDPDPT(BrowserBaseCarrier):
             self.page.wait.title_change('Track & Trace', timeout=5,
                                         raise_err=True)
             self._wait_page_complete('#content .table-responsive')
-            self._create_resp_dict(
-                self.page.run_js_loaded(self._get_scraping_js(), as_expr=True))
+            self._scrape()
         finally:
             # Quit the browser.
             self._close_page()

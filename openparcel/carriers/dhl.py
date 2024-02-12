@@ -31,8 +31,7 @@ class CarrierDHL(BrowserBaseCarrier):
             self._load_utils_js()
             self._wait_page_complete('.c-tracking-result--checkpoint',
                                      timeout=8)
-            self._create_resp_dict(
-                self.page.run_js_loaded(self._get_scraping_js(), as_expr=True))
+            self._scrape()
         finally:
             # Quit the browser.
             self._close_page()
