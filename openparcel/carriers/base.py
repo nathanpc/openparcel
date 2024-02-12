@@ -21,6 +21,7 @@ class BaseCarrier:
     def __init__(self, tracking_code: str = None):
         self.tracking_url: Template = Template(self.tracking_url_base)
         self.tracking_code: str = tracking_code
+        self.cached: bool = False
         self.last_updated: datetime.datetime = datetime.datetime.now(
             datetime.UTC)
         self._resp_dict: Optional[dict] = None
@@ -39,6 +40,12 @@ class BaseCarrier:
     def fetch(self) -> dict:
         """Fetches tracking updates from the carrier's tracking website."""
         raise NotImplementedError
+
+    def from_cache(self, cache: dict, last_updated: datetime.datetime):
+        """Populates the object with data from a cached object."""
+        self._resp_dict = cache
+        self.cached = True
+        self.last_updated = last_updated
 
     def get_resp_dict(self) -> dict:
         """Creates the response dictionary with all the information gathered

@@ -3,7 +3,11 @@
 import os
 import re
 import yaml
+import json
 import sqlite3
+import datetime
+import traceback
+import DrissionPage.errors
 
 from flask import Flask, request, session, g
 
@@ -22,11 +26,12 @@ app = Flask(__name__)
 app.config.from_file(config_path, load=yaml.safe_load)
 
 
-def connect_db():
+def connect_db() -> sqlite3.Connection:
     """Connects to the database and stores the connection in the global
     application context."""
     if 'db' not in g:
         g.db = sqlite3.connect(app.config['DB_HOST'])
+        g.db.execute('PRAGMA foreign_keys = ON')
 
     return g.db
 
@@ -46,22 +51,72 @@ def hello_world():
 
 
 @app.route('/track/<carrier_id>/<code>')
-def track(carrier_id: str, code: str):
+def track(carrier_id: str, code: str, force: bool = False):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
     # Get the requested carrier.
     carrier = carriers.from_id(carrier_id)
     if carrier is None:
         return {
             'title': 'Invalid carrier ID',
-            'message': 'Carrier ID doesn\'t match any of the available carriers.'
+            'message': 'Carrier ID doesn\'t match any of the available '
+                       'carriers.'
         }, 422
+    carrier = carrier(code)
+
+    # Check if it has been previously cached.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT parcels.*, history_cache.*, '
+                '(unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+                'FROM history_cache LEFT JOIN parcels '
+                'ON history_cache.parcel_id = parcels.id '
+                'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?) '
+                'ORDER BY history_cache.retrieved DESC LIMIT 1',
+                (carrier_id, code))
+    row = cur.fetchone()
+    parcel_id = None
+    if row is not None:
+        parcel_id = row[0]
+
+    # Check if we should return the cached value.
+    force = request.args.get('force', default=force)
+    if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
+        carrier.from_cache(json.loads(row[7]),
+                           datetime.datetime.fromisoformat(row[6]))
+        return carrier.get_resp_dict()
 
     # Fetch tracking history.
-    carrier = carrier(code)
-    data = carrier.fetch()
+    try:
+        # Fetch tracking history.
+        data = carrier.fetch()
+        cur = conn.cursor()
+        now = datetime.datetime.now(datetime.UTC)
 
-    # Send tracking history to client.
-    return data
+        # Is this the first time that we are caching this parcel?
+        if parcel_id is None:
+            # First time we are caching this parcel.
+            cur.execute('INSERT OR IGNORE INTO parcels (carrier, tracking_code, created)'
+                        ' VALUES (?, ?, ?)', (carrier_id, code, now.isoformat()))
+            conn.commit()
+            parcel_id = cur.lastrowid
+
+        # Cache the retrieved tracking history.
+        cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
+                    'VALUES (?, ?, ?)',
+                    (parcel_id, now.isoformat(), json.dumps(data)))
+        conn.commit()
+        cur.close()
+
+        # Send tracking history to the client.
+        return carrier.get_resp_dict()
+    except DrissionPage.errors.BaseError as e:
+        # Probably an error with our scraping stuff.
+        return {
+            'title': 'Scraping error',
+            'message': 'An error occurred while trying to fetch the tracking '
+                       'history from the carrier\'s website.',
+            'trace': traceback.format_exc()
+        }, 500
 
 
 @app.route('/register', methods=['POST'])
