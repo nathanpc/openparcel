@@ -74,16 +74,18 @@ def track(carrier_id: str, code: str, force: bool = False):
                 'ORDER BY history_cache.retrieved DESC LIMIT 1',
                 (carrier_id, code))
     row = cur.fetchone()
+
+    # Get the parcel ID if we even have one.
     parcel_id = None
     if row is not None:
         parcel_id = row[0]
 
-    # Check if we should return the cached value.
-    force = request.args.get('force', default=force)
-    if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
-        carrier.from_cache(json.loads(row[7]),
-                           datetime.datetime.fromisoformat(row[6]))
-        return carrier.get_resp_dict()
+        # Check if we should return the cached value.
+        force = request.args.get('force', default=force)
+        if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
+            carrier.from_cache(json.loads(row[7]),
+                               datetime.datetime.fromisoformat(row[6]))
+            return carrier.get_resp_dict()
 
     # Fetch tracking history.
     try:
