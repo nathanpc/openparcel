@@ -1,0 +1,31 @@
+### PackageTrack
+# Get the tracking history of a package.
+GET http://{{host}}/track/{{carrier_id}}/{{tracking_code}}
+
+
+### UserRegister
+# Registers the user in the database.
+POST http://{{host}}/register
+Content-Type: application/x-www-form-urlencoded
+
+username = {{username}} &
+password = {{password}}
+
+
+### UserLogin
+# Logs the use into the system.
+POST http://{{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username = {{username}} &
+password = {{password}}
+
+
+### UserLogout
+# Logs the user out of the system.
+GET http://{{host}}/logout
+
+
+### ListUserPackages
+# Lists all of the user's tracked packages.
+GET http://{{host}}/parcels
