@@ -26,6 +26,32 @@ password = {{password}}
 GET http://{{host}}/logout
 
 
+### FavoritePackage
+# Marks a tracked package as favorite.
+POST http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
+Content-Type: application/x-www-form-urlencoded
+
+name = {{parcel_name}}
+
+
+### FavoritePackageByID
+# Marks a tracked package as favorite using its ID.
+POST http://{{host}}/favorite/1
+Content-Type: application/x-www-form-urlencoded
+
+name = {{parcel_name}}
+
+
+### UnfavoritePackage
+# Removes a tracked package from the favorites.
+DELETE http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
+
+
+### UnfavoritePackageByID
+# Removes a tracked package from the favorites using its ID.
+DELETE http://{{host}}/favorite/1
+
+
 ### ListUserPackages
 # Lists all of the user's tracked packages.
 GET http://{{host}}/parcels

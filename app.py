@@ -46,6 +46,11 @@ def app_context_teardown(exception):
         db.close()
 
 
+def is_authenticated() -> bool:
+    """Checks if the user is currently authenticated."""
+    return 'user_id' in session
+
+
 @app.route('/')
 def hello_world():
     return 'OpenParcel'
@@ -82,7 +87,7 @@ def track(carrier_id: str, code: str, force: bool = False):
         parcel_id = row[0]
 
         # Check if we should return the cached value.
-        force = request.args.get('force', default=force)
+        force = request.args.get('force', default=force, type=bool)
         if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
             carrier.from_cache(json.loads(row[7]),
                                datetime.datetime.fromisoformat(row[6]))
@@ -210,7 +215,7 @@ def login(username: str = None, user_id: int = None):
         }, 400
 
     # Check if we are already logged in.
-    if 'user_id' in session:
+    if is_authenticated():
         message = 'The user is already logged into the system.'
         if username != session['username']:
             message = 'Another user is currently logged in. Please log out ' \
@@ -264,7 +269,7 @@ def login(username: str = None, user_id: int = None):
 def logout():
     """Logs out the user."""
     # Check if there's even a logged user.
-    if 'user_id' not in session:
+    if is_authenticated():
         return {
             'title': 'Logout unsuccessful',
             'message': 'No user was previously logged in.'
@@ -277,6 +282,130 @@ def logout():
     return {
         'title': 'Logout successful',
         'message': f'User {username} was logged out.'
+    }
+
+
+@app.route('/favorite/<carrier_id>/<code>', methods=['POST', 'DELETE'])
+def favorite_parcel(carrier_id: str, code: str, name: str = None,
+                    delivered: bool = False):
+    """Stores a parcel into the user's favorites list."""
+    if name is None:
+        name = request.form.get('name') or None
+
+    # Check if the user is currently logged in.
+    if not is_authenticated():
+        return {
+            'title': 'Sign-in required',
+            'message': 'You must be signed in to use this function.'
+        }, 401
+
+    # Get the parcel ID.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT parcels.id, user_parcels.name FROM parcels '
+                'LEFT JOIN user_parcels '
+                'ON (parcels.id = user_parcels.parcel_id) '
+                'AND (user_parcels.user_id = ?) '
+                'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?)',
+                (session['user_id'], carrier_id, code))
+    row = cur.fetchone()
+    cur.close()
+
+    # Check if the parcel has been tracked in the past.
+    if row is None:
+        return {
+            'title': 'Parcel does not exist',
+            'message': 'Parcel does not exist. Try tracking it first.'
+        }, 422
+
+    # Delegate the operation.
+    parcel_id = row[0]
+    name = row[1]
+    return favorite_parcel_id(parcel_id, name, delivered, skip_id_check=True)
+
+
+@app.route('/favorite/<parcel_id>', methods=['POST', 'DELETE'])
+def favorite_parcel_id(parcel_id: int, name: str = None,
+                       delivered: bool = False, skip_id_check: bool = False):
+    """Stores a parcel into the user's favorites list."""
+    if name is None:
+        name = request.form.get('name') or None
+
+    # Check if the user is currently logged in.
+    if not is_authenticated():
+        return {
+            'title': 'Sign-in required',
+            'message': 'You must be signed in to use this function.'
+        }, 401
+
+    # Check if the parcel is already in the favorites.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT name FROM user_parcels '
+                'WHERE (parcel_id = ?) AND (user_id = ?)',
+                (parcel_id, session['user_id']))
+    row = cur.fetchone()
+    if row is not None:
+        if request.method == 'POST':
+            return {
+                'title': 'Already in favorites',
+                'message': 'The parcel is already in the favorites list.'
+            }, 422
+        elif request.method == 'DELETE':
+            name = row[0]
+    elif row is None and request.method == 'DELETE':
+        return {
+            'title': 'Favorite does not exist',
+            'message': 'The requested parcel is not in the favorites list.'
+        }, 422
+    cur.close()
+
+    # Handle the operation of removing a parcel from the favorites.
+    if request.method == 'DELETE':
+        # Remove it from the favorites.
+        cur = conn.cursor()
+        cur.execute('DELETE FROM user_parcels '
+                    'WHERE (parcel_id = ?) AND (user_id = ?)',
+                    (parcel_id, session['user_id']))
+        conn.commit()
+        cur.close()
+
+        return {
+            'title': 'Removed from favorites',
+            'message': f'Parcel "{name}" was removed from the favorites list.'
+        }
+
+    # Perform some cursory checks.
+    if name is None:
+        return {
+            'title': 'Missing parcel name',
+            'message': 'Please supply a parcel name to be stored.'
+        }, 400
+
+    # Check if the parcel ID actually exists in the system.
+    if not skip_id_check:
+        cur = conn.cursor()
+        cur.execute('SELECT id FROM parcels WHERE id = ?', (parcel_id,))
+        row = cur.fetchone()
+        if row is None:
+            return {
+                'title': 'Parcel does not exist',
+                'message': 'Parcel does not exist. Try tracking it first.'
+            }, 422
+        cur.close()
+
+    # Store the favorite information in the database.
+    name = name.strip()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO user_parcels (name, delivered, user_id, parcel_id) '
+                'VALUES (?, ?, ?, ?)',
+                (name, delivered, session['user_id'], parcel_id))
+    conn.commit()
+    cur.close()
+
+    return {
+        'title': 'Added to favorites',
+        'message': 'The parcel has been successfully added to your favorites.'
     }
 
 
