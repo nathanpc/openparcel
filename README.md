@@ -4,6 +4,15 @@ An initiative to create an open source parcel tracking API and library that
 only uses public resources, no private access tokens or special contracts
 required.
 
+## Requirements
+
+Given the fact that this project was built from the ground up using modern tools
+in order to take advantage of newer features and a better development experience
+the minimum requirements for running the project may be a bit high.
+
+- [Python 3.11](https://docs.python.org/3/whatsnew/3.11.html) or newer
+- [SQLite 3.38.0](https://sqlite.org/releaselog/3_38_0.html) or newer
+
 ## Setup
 
 First let's set up the environment in order to run our server. Start by creating
