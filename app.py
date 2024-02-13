@@ -5,6 +5,7 @@ import re
 import yaml
 import json
 import sqlite3
+import hashlib
 import datetime
 import traceback
 import DrissionPage.errors
@@ -58,7 +59,7 @@ def track(carrier_id: str, code: str, force: bool = False):
     if carrier is None:
         return {
             'title': 'Invalid carrier ID',
-            'message': 'Carrier ID doesn\'t match any of the available '
+            'message': 'Carrier ID does not match any of the available '
                        'carriers.'
         }, 422
     carrier = carrier(code)
@@ -169,10 +170,15 @@ def register():
         }, 422
     cur.close()
 
+    # Hash the password.
+    salt = os.urandom(16)
+    password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
+                                        salt, 100_000)
+
     # Insert the new user into the database.
     cur = conn.cursor()
-    cur.execute('INSERT INTO users (username, password) VALUES (?, ?)',
-                (username, password))
+    cur.execute('INSERT INTO users (username, password, salt) VALUES (?, ?, ?)',
+                (username, password_hash.hex(), salt.hex()))
     conn.commit()
 
     # Log the user in for convenience.
@@ -214,22 +220,39 @@ def login(username: str = None, user_id: int = None):
             'message': message
         }, 422
 
-    # Check the credentials against the database.
+    # Get the salt used to generate the password hash.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT id FROM users WHERE (username = ?) AND '
-                '(password = ?)', (username, password))
+    cur.execute('SELECT salt FROM users WHERE username = ?', (username,))
     row = cur.fetchone()
     if row is None:
         return {
-            'title': 'Invalid username or password',
-            'message': 'Credentials didn\'t match any users in our database.'
+            'title': 'Invalid username',
+            'message': 'Username is not in our database. Maybe you have '
+                       'misspelt it?'
+        }, 401
+    salt = bytes.fromhex(row[0])
+    cur.close()
+
+    # Check the credentials against the database.
+    cur = conn.cursor()
+    password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
+                                        salt, 100_000)
+    cur.execute('SELECT id FROM users WHERE (username = ?) AND '
+                '(password = ?)', (username, password_hash.hex()))
+    row = cur.fetchone()
+    if row is None:
+        return {
+            'title': 'Wrong password',
+            'message': 'Credentials did not match any users in our database. '
+                       'Check if you have typed the right password.'
         }, 401
 
     # Sets the session authentication keys.
     user_id = row[0]
     session['username'] = username
     session['user_id'] = user_id
+    cur.close()
 
     return {
         'title': 'Logged in',
