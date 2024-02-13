@@ -89,7 +89,7 @@ def track(carrier_id: str, code: str, force: bool = False):
         # Check if we should return the cached value.
         force = request.args.get('force', default=force, type=bool)
         if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
-            carrier.from_cache(json.loads(row[7]),
+            carrier.from_cache(parcel_id, json.loads(row[7]),
                                datetime.datetime.fromisoformat(row[6]))
             return carrier.get_resp_dict()
 

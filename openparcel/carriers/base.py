@@ -24,6 +24,8 @@ class BaseCarrier:
         self.cached: bool = False
         self.last_updated: datetime.datetime = datetime.datetime.now(
             datetime.UTC)
+        self.db_id: Optional[int] = None
+        self.parcel_name: Optional[str] = None
         self._resp_dict: Optional[dict] = None
 
     def get_tracking_url(self) -> str:
@@ -41,13 +43,16 @@ class BaseCarrier:
         """Fetches tracking updates from the carrier's tracking website."""
         raise NotImplementedError
 
-    def from_cache(self, cache: dict, last_updated: datetime.datetime):
+    def from_cache(self, db_id: int, cache: dict,
+                   last_updated: datetime.datetime, parcel_name: str = None):
         """Populates the object with data from a cached object."""
         self._resp_dict = cache
+        self.db_id = db_id
+        self.parcel_name = parcel_name
         self.cached = True
         self.last_updated = last_updated
 
-    def get_resp_dict(self) -> dict:
+    def get_resp_dict(self, extra: dict = None) -> dict:
         """Creates the response dictionary with all the information gathered
         for the parcel."""
         resp = self._resp_dict
@@ -56,6 +61,16 @@ class BaseCarrier:
         resp['accentColor'] = self.accent_color
         resp['cached'] = self.cached
         resp['lastUpdated'] = self.last_updated.isoformat()
+        resp['id'] = self.db_id
+        resp['name'] = self.parcel_name
+        resp['carrier'] = {
+            'id': self.uid,
+            'name': self.name
+        }
+
+        # Append any extras.
+        if extra is not None:
+            resp |= extra
 
         return resp
 
