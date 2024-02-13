@@ -412,6 +412,10 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
 @app.route('/parcels')
 def list_parcels():
     """Lists the parcels for a registered user."""
+    resp = {
+        'parcels': []
+    }
+
     # Check if the user is authenticated.
     if 'user_id' not in session:
         return {
@@ -419,11 +423,31 @@ def list_parcels():
             'message': 'Please log in to have access to the parcels list.'
         }, 401
 
-    # TODO: Query database.
+    # Get the list from the database.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT DISTINCT * FROM '
+                '(SELECT user_parcels.name, parcels.carrier,'
+                ' parcels.tracking_code, history_cache.* FROM user_parcels '
+                'LEFT JOIN parcels '
+                'ON parcels.id = user_parcels.parcel_id '
+                'LEFT JOIN history_cache '
+                'ON history_cache.parcel_id = user_parcels.parcel_id '
+                'WHERE user_parcels.user_id = ? '
+                'ORDER BY history_cache.retrieved DESC) AS sq '
+                'GROUP BY sq.parcel_id;', (session['user_id'],))
+    for row in cur.fetchall():
+        # Build up the tracked object.
+        carrier = carriers.from_id(row[1])(row[2])
+        carrier.from_cache(row[4], json.loads(row[6]),
+                           datetime.datetime.fromisoformat(row[5]),
+                           parcel_name=row[0])
 
-    return {
-        'parcels': []
-    }
+        # Append the object to the list.
+        resp['parcels'].append(carrier.get_resp_dict())
+    cur.close()
+
+    return resp
 
 
 if __name__ == '__main__':
