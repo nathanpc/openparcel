@@ -126,6 +126,15 @@ def register():
     """Registers the user in the database."""
     username = request.form['username'].lower()
     password = request.form['password']
+
+    # Check if we are accepting registrations.
+    if not app.config['ALLOW_REGISTRATION']:
+        return {
+            'title': 'Registrations disabled',
+            'message': 'Registrations have been disabled by the administrator.'
+        }, 422
+
+    # Check if we have both username and password.
     if username is None or password is None:
         return {
             'title': 'Missing username or password',
