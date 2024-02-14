@@ -56,6 +56,15 @@ def hello_world():
     return 'OpenParcel'
 
 
+@app.route('/ping')
+def ping_pong():
+    """Provides a rudimentary way to detect the server and its version."""
+    resp = app.make_response('PONG')
+    resp.headers['X-OpenParcel-Version'] = '0.1.0'
+
+    return resp
+
+
 @app.route('/track/<carrier_id>/<code>')
 def track(carrier_id: str, code: str, force: bool = False):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""

@@ -1,3 +1,8 @@
+### PingPong
+# Checks the server health and its version.
+GET http://{{host}}/ping
+
+
 ### PackageTrack
 # Get the tracking history of a package.
 GET http://{{host}}/track/{{carrier_id}}/{{tracking_code}}
