@@ -41,7 +41,7 @@ name = {{parcel_name}}
 
 ### FavoritePackageByID
 # Marks a tracked package as favorite using its ID.
-POST http://{{host}}/favorite/1
+POST http://{{host}}/favorite/{{parcel_id}}
 Content-Type: application/x-www-form-urlencoded
 
 name = {{parcel_name}}
@@ -54,7 +54,17 @@ DELETE http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
 
 ### UnfavoritePackageByID
 # Removes a tracked package from the favorites using its ID.
-DELETE http://{{host}}/favorite/1
+DELETE http://{{host}}/favorite/{{parcel_id}}
+
+
+### MarkDelivered
+# Flags a favorite parcel as delivered.
+POST http://{{host}}/deliver/{{parcel_id}}
+
+
+### MarkNotDelivered
+# Flags a favorite parcel as not delivered.
+DELETE http://{{host}}/deliver/{{parcel_id}}
 
 
 ### ListUserPackages

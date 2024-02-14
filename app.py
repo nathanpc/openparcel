@@ -10,6 +10,7 @@ import datetime
 import traceback
 import DrissionPage.errors
 
+from typing import Optional
 from flask import Flask, request, session, g
 
 import openparcel.carriers as carriers
@@ -51,6 +52,14 @@ def is_authenticated() -> bool:
     return 'user_id' in session
 
 
+def user_id() -> Optional[int]:
+    """Returns the currently logged user ID if authenticated. None otherwise."""
+    if is_authenticated():
+        return session['user_id']
+
+    return None
+
+
 @app.route('/')
 def hello_world():
     return 'OpenParcel'
@@ -82,22 +91,34 @@ def track(carrier_id: str, code: str, force: bool = False):
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT parcels.*, history_cache.*, '
-                '(unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
-                'FROM history_cache LEFT JOIN parcels '
-                'ON history_cache.parcel_id = parcels.id '
+                ' user_parcels.name, user_parcels.delivered, '
+                ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+                'FROM history_cache '
+                'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
+                'LEFT JOIN user_parcels '
+                ' ON (history_cache.parcel_id = user_parcels.parcel_id)'
+                ' AND (user_parcels.user_id = ?)'
                 'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?) '
                 'ORDER BY history_cache.retrieved DESC LIMIT 1',
-                (carrier_id, code))
+                (user_id(), carrier_id, code))
     row = cur.fetchone()
+    cur.close()
 
     # Get the parcel ID if we even have one.
     if row is not None:
-        # Check if we should return the cached value.
+        timeout = app.config['CACHE_REFRESH_TIMEOUT']
         force = request.args.get('force', default=force, type=bool)
-        if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
+        delivered = row[-2]
+        parcel_name = row[-3]
+
+        # Check if we should return the cached value.
+        if not force and (abs(row[-1]) <= timeout or delivered):
             carrier.from_cache(row[0], json.loads(row[7]),
-                               datetime.datetime.fromisoformat(row[6]))
+                               datetime.datetime.fromisoformat(row[6]),
+                               parcel_name=parcel_name)
             return carrier.get_resp_dict()
+
+        carrier.db_id = row[0]
 
     # Fetch tracking history.
     try:
@@ -413,6 +434,64 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
         'title': 'Added to favorites',
         'message': 'The parcel has been successfully added to your favorites.'
     }
+
+
+@app.route('/deliver/<parcel_id>', methods=['POST', 'DELETE'])
+def deliver_flag_parcel(parcel_id: int):
+    """Marks a favorite parcel as delivered or not."""
+    # Check if the user is currently logged in.
+    if not is_authenticated():
+        return {
+            'title': 'Sign-in required',
+            'message': 'You must be signed in to use this function.'
+        }, 401
+
+    # Get the favorite parcel.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT parcel_id, name, delivered FROM user_parcels '
+                'WHERE (user_id = ?) AND (parcel_id = ?)',
+                (session['user_id'], parcel_id))
+    row = cur.fetchone()
+    cur.close()
+
+    # Perform cursory checks.
+    if row is None:
+        return {
+            'title': 'Favorite does not exist',
+            'message': 'In order to mark a parcel as delivered it must be in '
+                       'the favorites list first.'
+        }, 422
+    elif request.method == 'POST' and row[2]:
+        return {
+            'title': 'Favorite already delivered',
+            'message': 'The parcel has already been marked as delivered.'
+        }, 422
+    elif request.method == 'DELETE' and not row[2]:
+        return {
+            'title': 'Favorite not yet delivered',
+            'message': 'The parcel has not been marked as delivered previously.'
+        }, 422
+
+    # Toggle the parcel's delivered flag.
+    cur = conn.cursor()
+    cur.execute('UPDATE user_parcels SET delivered = ? '
+                'WHERE (user_id = ?) AND (parcel_id = ?)',
+                (request.method == 'POST', session['user_id'], parcel_id))
+    conn.commit()
+    cur.close()
+
+    # Respond with a pretty message.
+    if request.method == 'POST':
+        return {
+            'title': 'Parcel marked as delivered',
+            'message': f'{row[1]} has been marked as delivered.'
+        }
+    else:
+        return {
+            'title': 'Parcel no longer delivered',
+            'message': f'{row[1]} has been marked as not yet delivered.'
+        }
 
 
 @app.route('/parcels')
