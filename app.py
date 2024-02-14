@@ -82,14 +82,11 @@ def track(carrier_id: str, code: str, force: bool = False):
     row = cur.fetchone()
 
     # Get the parcel ID if we even have one.
-    parcel_id = None
     if row is not None:
-        parcel_id = row[0]
-
         # Check if we should return the cached value.
         force = request.args.get('force', default=force, type=bool)
         if abs(row[-1]) <= app.config['CACHE_REFRESH_TIMEOUT'] and not force:
-            carrier.from_cache(parcel_id, json.loads(row[7]),
+            carrier.from_cache(row[0], json.loads(row[7]),
                                datetime.datetime.fromisoformat(row[6]))
             return carrier.get_resp_dict()
 
@@ -101,17 +98,17 @@ def track(carrier_id: str, code: str, force: bool = False):
         now = datetime.datetime.now(datetime.UTC)
 
         # Is this the first time that we are caching this parcel?
-        if parcel_id is None:
+        if carrier.db_id is None:
             # First time we are caching this parcel.
             cur.execute('INSERT OR IGNORE INTO parcels (carrier, tracking_code, created)'
                         ' VALUES (?, ?, ?)', (carrier_id, code, now.isoformat()))
             conn.commit()
-            parcel_id = cur.lastrowid
+            carrier.db_id = cur.lastrowid
 
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
                     'VALUES (?, ?, ?)',
-                    (parcel_id, now.isoformat(), json.dumps(data)))
+                    (carrier.db_id, now.isoformat(), json.dumps(data)))
         conn.commit()
         cur.close()
 
