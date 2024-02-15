@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from DrissionPage.errors import WaitTimeoutError
+
 from openparcel.carriers.base import BrowserBaseCarrier
 
 
@@ -17,10 +19,16 @@ class CarrierCTT(BrowserBaseCarrier):
     def fetch(self):
         try:
             self._fetch_page()
-            self.page.wait.title_change('Detalhe', timeout=5, raise_err=True)
-            self._wait_page_complete(
-                '[data-block="TrackTrace.TT_Timeline_New"] '
-                '[data-block="CustomerArea.AC_TimelineItemCustom"]')
+            try:
+                self.page.wait.title_change('Detalhe', timeout=8,
+                                            raise_err=True)
+                self._wait_page_complete(
+                    '[data-block="TrackTrace.TT_Timeline_New"] '
+                    '[data-block="CustomerArea.AC_TimelineItemCustom"]',
+                    timeout=8)
+            except WaitTimeoutError as e:
+                self._scrape_check_error()
+                raise e
             self._scrape()
         finally:
             # Quit the browser.

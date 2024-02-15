@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from DrissionPage.errors import WaitTimeoutError
+
 from openparcel.carriers.base import BrowserBaseCarrier
 
 
@@ -16,9 +18,14 @@ class CarrierDPDPT(BrowserBaseCarrier):
     def fetch(self):
         try:
             self._fetch_page()
-            self.page.wait.title_change('Track & Trace', timeout=5,
-                                        raise_err=True)
-            self._wait_page_complete('#content .table-responsive')
+            try:
+                self.page.wait.title_change('Track & Trace', timeout=5,
+                                            raise_err=True)
+                self._scrape_check_error()
+                self._wait_page_complete('#content .table-responsive')
+            except WaitTimeoutError as e:
+                self._scrape_check_error()
+                raise e
             self._scrape()
         finally:
             # Quit the browser.

@@ -7,8 +7,10 @@ from string import Template
 from typing import Optional
 
 from DrissionPage import ChromiumPage, ChromiumOptions
+from DrissionPage.errors import WaitTimeoutError
 
-from openparcel.exceptions import TrackingCodeNotFound, ScrapingJsNotFound
+from openparcel.exceptions import (TrackingCodeNotFound, ScrapingJsNotFound,
+                                   ScrapingReturnedError)
 
 
 class BaseCarrier:
@@ -88,9 +90,21 @@ class BrowserBaseCarrier(BaseCarrier):
         super().__init__(tracking_code)
         self.page: Optional[ChromiumPage] = None
 
-    def _scrape(self):
-        self._resp_dict = self.page.run_js_loaded(self._get_scraping_js(),
+    def _scrape(self, func_name: str = 'scrape'):
+        # Get the scraped response.
+        self._resp_dict = self.page.run_js_loaded(f'{func_name}();',
                                                   as_expr=True)
+
+        # Check if we caught an error.
+        if self._resp_dict is not None and 'error' in self._resp_dict:
+            raise ScrapingReturnedError(self._resp_dict['error'])
+
+    def _scrape_check_error(self, load_scripts: bool = True):
+        """Scrapes the page for errors and raises and exception if needed."""
+        if load_scripts:
+            self._load_scraping_js()
+
+        self._scrape(func_name='errorCheck')
 
     def _fetch_page(self):
         """Sets up the scraping web browser and begins fetching the carrier's
@@ -100,12 +114,13 @@ class BrowserBaseCarrier(BaseCarrier):
             opts = ChromiumOptions()
             opts.auto_port()
             opts.set_argument('--ignore-certificate-errors')
+            opts.set_argument('--disable-web-security')
 
             self.page = ChromiumPage(addr_or_opts=opts)
 
         # Get the tracking website.
         self.page.get(self.get_tracking_url())
-        self._load_utils_js()
+        self._load_scraping_js()
 
     def _close_page(self):
         """Closes the scraping web browser instance and cleans up any temporary
@@ -113,9 +128,10 @@ class BrowserBaseCarrier(BaseCarrier):
         self.page.close()
         self.page = None
 
-    def _load_utils_js(self):
-        """Loads the common scraping utilities script into the page."""
+    def _load_scraping_js(self):
+        """Loads scraping scripts into the page."""
         self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
+        self.page.run_js_loaded(self._get_scraping_js(), as_expr=True)
 
     def _get_scraping_js(self, name: str = None) -> str:
         """Gets the Javascript script to run in order to scrape the web page."""
@@ -143,5 +159,6 @@ class BrowserBaseCarrier(BaseCarrier):
 
         # Check if the dialog box was actually the one we were expecting.
         if alert_text != "READY!":
-            raise TimeoutError('Alert from waiting for page to finish loading'
-                               f'didn\'t contain magic phrase. Got: {alert_text}')
+            raise WaitTimeoutError(
+                'Alert from waiting for page to finish loading did not contain '
+                f'magic phrase. Got: {alert_text}')

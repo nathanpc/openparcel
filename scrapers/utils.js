@@ -152,6 +152,40 @@ window.OpenParcel = {
 		}
 	},
 
+	error: {
+		codes: {
+			Unknown: {
+				id: 0,
+				name: "Unknown"
+			},
+			InvalidTrackingCode: {
+				id: 1,
+				name: "InvalidTrackingCode"
+			},
+			ParcelNotFound: {
+				id: 2,
+				name: "ParcelNotFound"
+			}
+		},
+
+		/**
+		 * Generates a standard error object.
+		 *
+		 * @param {{id: number, name: string}} code   Error code description object.
+		 * @param {any}                        [data] Extra data to be included.
+		 *
+		 * @returns {{error: {code: {id: number, name: string}, data: (*|null)}}}
+		 */
+		create(code, data) {
+			return {
+				error: {
+					code: code,
+					data: (data !== undefined) ? data : null
+				}
+			}
+		}
+	},
+
 	calendar: {
 		getMonth(monthName) {
 			switch (monthName) {

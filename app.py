@@ -14,6 +14,7 @@ from typing import Optional
 from flask import Flask, request, session, g
 
 import openparcel.carriers as carriers
+from openparcel.exceptions import ScrapingReturnedError
 
 # Check if we have a configuration file present.
 config_path = 'config/config.yml'
@@ -150,8 +151,15 @@ def track(carrier_id: str, code: str, force: bool = False):
             'title': 'Scraping error',
             'message': 'An error occurred while trying to fetch the tracking '
                        'history from the carrier\'s website.',
-            'trace': traceback.format_exc()
+            'trace': traceback.format_exc(),
+            'data': {
+                'carrierId': carrier_id,
+                'trackingCode': code
+            }
         }, 500
+    except ScrapingReturnedError as e:
+        # Looks like we caught an error in the scraped page.
+        return e.resp_dict(), 422
 
 
 @app.route('/register', methods=['POST'])
