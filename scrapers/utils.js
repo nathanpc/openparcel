@@ -114,6 +114,7 @@ window.OpenParcel = {
 				state: null,
 				postalCode: null,
 				country: null,
+				searchQuery: null,
 				coords: {
 					lat: null,
 					lng: null
@@ -148,7 +149,45 @@ window.OpenParcel = {
 				});
 			}
 
+			// Fix addresses in the data object.
+			OpenParcel.data.fixAddress(data.origin);
+			OpenParcel.data.fixAddress(data.destination);
+			data.history.forEach(function (update) {
+				OpenParcel.data.fixAddress(update.location);
+			});
+
 			return data;
+		},
+
+		/**
+		 * Builds the query string for an address object and fixes any
+		 * abnormalities.
+		 *
+		 * @param {{country: string|null, city: string|null,
+		 *         postalCode: string|null, state: string|null,
+		 *         addressLine: string|null, coords: {lat: Number|null,
+		 *         lng: Number|null}, queryString: string|null}} address
+		 */
+		fixAddress (address) {
+			if (address === null)
+				return;
+
+			// Build the search query string based on geo coordinates.
+			if ((address.coords.lat !== null) && (address.coords.lng !== null)) {
+				address.searchQuery = address.coords.lat + ", " +
+					address.coords.lng;
+				return;
+			}
+
+			// Build the search query string based on bits of the address.
+			address.searchQuery = " " + address.addressLine + "  " +
+				address.city + "  " + address.state + "  " +
+				address.postalCode + "  " + address.country + " ";
+			address.searchQuery = address.searchQuery.replace(/\snull\s/g, " ");
+			address.searchQuery = address.searchQuery.replace(/\s{2,}/g, " ");
+			address.searchQuery = address.searchQuery.trim();
+			if (address.searchQuery.length <= 1)
+				address.searchQuery = null;
 		}
 	},
 
