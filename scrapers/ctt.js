@@ -62,7 +62,12 @@ function scrape() {
 	// Parse the tracking history.
 	const histItems = document.querySelectorAll("[data-block='TrackTrace.TT_Timeline_New'] [data-block='CustomerArea.AC_TimelineItemCustom']");
 	histItems.forEach(function (item) {
-		data.history.push(parseHistoryItem(item, creationDate));
+		// Check if it's a disabled item.
+		let title = item.querySelector("[id*=TimelineContent] [id*=Title] [data-expression]")
+		if (!title.classList.value.includes("neutral")) {
+			// Parse the item and push it to the history list.
+			data.history.push(parseHistoryItem(item, creationDate));
+		}
 	});
 
 	// Set the current delivery status.
