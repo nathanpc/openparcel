@@ -122,7 +122,8 @@ def authenticate(username: str, password: str = None,
         # Authenticate using the authentication token.
         cur.execute('SELECT auth_tokens.user_id FROM auth_tokens '
                     'INNER JOIN users on auth_tokens.user_id = users.id '
-                    'WHERE (auth_tokens.token = ?) AND (users.username = ?)',
+                    'WHERE (auth_tokens.token = ?) AND (users.username = ?) '
+                    ' AND auth_tokens.active',
                     (auth_token, username))
         row = cur.fetchone()
         if row is None:
