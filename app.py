@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 
+import datetime
+import hashlib
+import json
 import os
 import re
-import yaml
-import json
+import secrets
 import sqlite3
-import hashlib
-import datetime
 import traceback
-import DrissionPage.errors
-
 from typing import Optional
-from flask import Flask, request, session, g
+
+import DrissionPage.errors
+import yaml
+from flask import Flask, request, g
 
 import openparcel.carriers as carriers
-from openparcel.exceptions import ScrapingReturnedError
+from openparcel.exceptions import (ScrapingReturnedError, NotEnoughParameters,
+                                   AuthenticationFailed, TitledException)
 
 # Check if we have a configuration file present.
 config_path = 'config/config.yml'
@@ -48,17 +50,134 @@ def app_context_teardown(exception):
         db.close()
 
 
+@app.errorhandler(TitledException)
+def handle_title_exception(exc: TitledException):
+    """Handles uncaught exceptions that were made to provide a response to the
+    user."""
+    return exc.resp_dict(), exc.status_code
+
+
 def is_authenticated() -> bool:
     """Checks if the user is currently authenticated."""
-    return 'user_id' in session
+    return 'user_id' in g
+
+
+def authenticate(username: str, password: str = None,
+                 auth_token: str = None) -> Optional[int]:
+    """Authenticates the user based on the provided credentials."""
+    # Check if we have cached the user ID.
+    if 'user_id' in g:
+        return g.user_id
+
+    # Perform a bunch of sanity checks.
+    if username is None and password is None and auth_token is None:
+        raise NotEnoughParameters('Nothing was provided for authentication',
+                                  'None of the required parameters were set. '
+                                  'Either send the username, and password or '
+                                  'authentication token.', 401)
+    elif username is None:
+        raise NotEnoughParameters('Missing username',
+                                  'In order to authenticate a username and '
+                                  'password must be supplied.', 400)
+    elif password is None and auth_token is None:
+        raise NotEnoughParameters('Missing password or authentication token',
+                                  'In order to authenticate a password or an '
+                                  'authentication token must be supplied.',
+                                  400)
+    elif username is not None and password is not None and \
+            auth_token is not None:
+        raise AuthenticationFailed('Both secrets were provided',
+                                   'Either password or authentication token '
+                                   'must be provided, but not both of them.',
+                                   422)
+
+    # Check the username and get the salt used to generate the password hash.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT salt FROM users WHERE username = ?', (username,))
+    row = cur.fetchone()
+    if row is None:
+        raise AuthenticationFailed('Invalid username',
+                                   'Username is not in our database. Maybe '
+                                   'you have misspelt it?', 401)
+    salt = bytes.fromhex(row[0])
+    cur.close()
+
+    # Check the credentials against the database.
+    cur = conn.cursor()
+    row = None
+    if password is not None:
+        # Authenticate using a password.
+        password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
+                                            salt, 100_000)
+        cur.execute('SELECT id FROM users WHERE (username = ?) AND '
+                    '(password = ?)', (username, password_hash.hex()))
+        row = cur.fetchone()
+        if row is None:
+            raise AuthenticationFailed('Wrong password',
+                                       'Credentials did not match any users '
+                                       'in our database. Check if you have '
+                                       'typed the right password.', 401)
+    else:
+        # Authenticate using the authentication token.
+        cur.execute('SELECT auth_tokens.user_id FROM auth_tokens '
+                    'INNER JOIN users on auth_tokens.user_id = users.id '
+                    'WHERE (auth_tokens.token = ?) AND (users.username = ?)',
+                    (auth_token, username))
+        row = cur.fetchone()
+        if row is None:
+            raise AuthenticationFailed('Wrong authentication token',
+                                       'Credentials did not match anything '
+                                       'in our database. Check if you have '
+                                       'the right authentication token for '
+                                       'this user.', 401)
+    cur.close()
+
+    # Caches the username and user ID for the request lifecycle.
+    g.username = username
+    g.user_id = int(row[0])
+
+    return g.user_id
+
+
+def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
+    """Authentication workflow for an HTTP request."""
+    if type(use_secrets) is str:
+        use_secrets = (use_secrets,)
+
+    # Check if we have the authentication key to work with.
+    auth_key = request.args.get('auth')
+    if request.method == 'POST':
+        auth_key = request.form.get('auth')
+    if 'X-Auth-Token' in request.headers:
+        auth_key = request.headers['X-Auth-Token']
+    if auth_key is None:
+        raise NotEnoughParameters('Missing authentication key',
+                                  'An authentication key (username and '
+                                  'authentication token) must be provided to '
+                                  'access this resource.', 401)
+
+    # Break down the authentication key and perform some general checks.
+    auth_key = auth_key.split(':')
+    if len(auth_key) != 2 or not auth_key[0].strip() or not auth_key[1].strip():
+        raise AuthenticationFailed('Invalid authentication key',
+                                   'Format of the provided authentication '
+                                   'key is not valid.', 200)
+    username = auth_key[0].lower()
+    secret = auth_key[1]
+
+    # Perform the authentication.
+    if 'password' in use_secrets:
+        return authenticate(username, password=secret)
+    if 'auth_token' in use_secrets:
+        return authenticate(username, auth_token=secret)
+    else:
+        raise NotImplementedError('Unsupported secret type')
 
 
 def user_id() -> Optional[int]:
     """Returns the currently logged user ID if authenticated. None otherwise."""
-    if is_authenticated():
-        return session['user_id']
-
-    return None
+    return g.user_id if is_authenticated() else None
 
 
 @app.route('/')
@@ -78,6 +197,9 @@ def ping_pong():
 @app.route('/track/<carrier_id>/<code>')
 def track(carrier_id: str, code: str, force: bool = False):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
+    # Check if we are authorized.
+    http_authenticate('auth_token')
+
     # Get the requested carrier.
     carrier = carriers.from_id(carrier_id)
     if carrier is None:
@@ -205,8 +327,7 @@ def register():
     if cur.fetchone() is not None:
         return {
             'title': 'Username already exists',
-            'message': 'Username is in use by another user. Please select '
-                       'another one.'
+            'message': 'Username is already in use. Please select another one.'
         }, 422
     cur.close()
 
@@ -220,119 +341,69 @@ def register():
     cur.execute('INSERT INTO users (username, password, salt) VALUES (?, ?, ?)',
                 (username, password_hash.hex(), salt.hex()))
     conn.commit()
-
-    # Log the user in for convenience.
-    login(username, cur.lastrowid)
     cur.close()
 
     return {
         'title': 'Registration successful',
-        'message': 'User was successfully registered and is already logged in.'
+        'message': 'User was successfully registered.'
     }
 
 
-@app.route('/login', methods=['POST'])
-def login(username: str = None, user_id: int = None):
-    """Logs the use into the system."""
-    # Check if we are just setting the authentication session keys.
-    if username is not None and user_id is not None:
-        session['username'] = username
-        session['user_id'] = user_id
+@app.route('/auth/token/new', methods=['POST'])
+def create_auth_token(description: str = None, username: str = None,
+                      password: str = None):
+    """Creates a new authentication token for a user."""
+    # Authenticate using the username and password first.
+    if username is None and password is None:
+        http_authenticate('password')
+    else:
+        authenticate(username, password)
 
-    # Check if we have a username and password.
-    username = request.form['username'].lower()
-    password = request.form['password']
-    if username is None or password is None:
-        return {
-            'title': 'Missing username or password',
-            'message': 'In order to login a username and password must be '
-                       'supplied.'
-        }, 400
+    # Get the description.
+    if description is None:
+        if 'description' not in request.form:
+            raise TitledException('Description not provided',
+                                  'You must provide a description for the '
+                                  'authorization token that will be generated.',
+                                  400)
+        elif request.form['description'].strip() == '':
+            raise TitledException('Empty description provided',
+                                  'A meaningful description is required for '
+                                  'generating an authentication token.', 422)
 
-    # Check if we are already logged in.
-    if is_authenticated():
-        message = 'The user is already logged into the system.'
-        if username != session['username']:
-            message = 'Another user is currently logged in. Please log out ' \
-                      'first.'
-        return {
-            'title': 'User already logged in',
-            'message': message
-        }, 422
+        description = request.form['description'].strip()
 
-    # Get the salt used to generate the password hash.
+    # Generate the authentication token store it.
+    auth_token = secrets.token_hex(20)
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT salt FROM users WHERE username = ?', (username,))
-    row = cur.fetchone()
-    if row is None:
-        return {
-            'title': 'Invalid username',
-            'message': 'Username is not in our database. Maybe you have '
-                       'misspelt it?'
-        }, 401
-    salt = bytes.fromhex(row[0])
-    cur.close()
-
-    # Check the credentials against the database.
-    cur = conn.cursor()
-    password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
-                                        salt, 100_000)
-    cur.execute('SELECT id FROM users WHERE (username = ?) AND '
-                '(password = ?)', (username, password_hash.hex()))
-    row = cur.fetchone()
-    if row is None:
-        return {
-            'title': 'Wrong password',
-            'message': 'Credentials did not match any users in our database. '
-                       'Check if you have typed the right password.'
-        }, 401
-
-    # Sets the session authentication keys.
-    user_id = row[0]
-    session['username'] = username
-    session['user_id'] = user_id
+    cur.execute('INSERT INTO auth_tokens (token, user_id, description) '
+                'VALUES (?, ?, ?)', (auth_token, user_id(), description))
+    conn.commit()
     cur.close()
 
     return {
-        'title': 'Logged in',
-        'message': f'User {username} successfully logged in.'
+        'description': description,
+        'token': auth_token
     }
 
 
-@app.route('/logout', methods=['GET', 'POST'])
-def logout():
-    """Logs out the user."""
-    # Check if there's even a logged user.
-    if is_authenticated():
-        return {
-            'title': 'Logout unsuccessful',
-            'message': 'No user was previously logged in.'
-        }, 422
-
-    # Remove the authentication keys.
-    session.pop('user_id', None)
-    username = session.pop('username', None)
-
-    return {
-        'title': 'Logout successful',
-        'message': f'User {username} was logged out.'
-    }
+@app.route('/auth/token/<auth_token>', methods=['DELETE'])
+def revoke_auth_token(auth_token: str = None, username: str = None,
+                      password: str = None):
+    """Revokes an authentication token of a user."""
+    # TODO: Implement this.
 
 
 @app.route('/favorite/<carrier_id>/<code>', methods=['POST', 'DELETE'])
 def favorite_parcel(carrier_id: str, code: str, name: str = None,
                     delivered: bool = False):
     """Stores a parcel into the user's favorites list."""
-    if name is None:
-        name = request.form.get('name') or None
+    name = request.form.get('name') if name is None else None
+    # TODO: Fix this implementation. Name is currently ignored.
 
-    # Check if the user is currently logged in.
-    if not is_authenticated():
-        return {
-            'title': 'Sign-in required',
-            'message': 'You must be signed in to use this function.'
-        }, 401
+    # Check if we are authorized.
+    http_authenticate('auth_token')
 
     # Get the parcel ID.
     conn = connect_db()
@@ -342,7 +413,7 @@ def favorite_parcel(carrier_id: str, code: str, name: str = None,
                 'ON (parcels.id = user_parcels.parcel_id) '
                 'AND (user_parcels.user_id = ?) '
                 'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?)',
-                (session['user_id'], carrier_id, code))
+                (user_id(), carrier_id, code))
     row = cur.fetchone()
     cur.close()
 
@@ -366,19 +437,15 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
     if name is None:
         name = request.form.get('name') or None
 
-    # Check if the user is currently logged in.
-    if not is_authenticated():
-        return {
-            'title': 'Sign-in required',
-            'message': 'You must be signed in to use this function.'
-        }, 401
+    # Check if we are authorized.
+    http_authenticate('auth_token')
 
     # Check if the parcel is already in the favorites.
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT name FROM user_parcels '
                 'WHERE (parcel_id = ?) AND (user_id = ?)',
-                (parcel_id, session['user_id']))
+                (parcel_id, user_id()))
     row = cur.fetchone()
     if row is not None:
         if request.method == 'POST':
@@ -401,7 +468,7 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
         cur = conn.cursor()
         cur.execute('DELETE FROM user_parcels '
                     'WHERE (parcel_id = ?) AND (user_id = ?)',
-                    (parcel_id, session['user_id']))
+                    (parcel_id, user_id()))
         conn.commit()
         cur.close()
 
@@ -434,7 +501,7 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
     cur = conn.cursor()
     cur.execute('INSERT INTO user_parcels (name, delivered, user_id, parcel_id) '
                 'VALUES (?, ?, ?, ?)',
-                (name, delivered, session['user_id'], parcel_id))
+                (name, delivered, user_id(), parcel_id))
     conn.commit()
     cur.close()
 
@@ -447,19 +514,15 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
 @app.route('/deliver/<parcel_id>', methods=['POST', 'DELETE'])
 def deliver_flag_parcel(parcel_id: int):
     """Marks a favorite parcel as delivered or not."""
-    # Check if the user is currently logged in.
-    if not is_authenticated():
-        return {
-            'title': 'Sign-in required',
-            'message': 'You must be signed in to use this function.'
-        }, 401
+    # Check if we are authorized.
+    http_authenticate('auth_token')
 
     # Get the favorite parcel.
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT parcel_id, name, delivered FROM user_parcels '
                 'WHERE (user_id = ?) AND (parcel_id = ?)',
-                (session['user_id'], parcel_id))
+                (user_id(), parcel_id))
     row = cur.fetchone()
     cur.close()
 
@@ -485,7 +548,7 @@ def deliver_flag_parcel(parcel_id: int):
     cur = conn.cursor()
     cur.execute('UPDATE user_parcels SET delivered = ? '
                 'WHERE (user_id = ?) AND (parcel_id = ?)',
-                (request.method == 'POST', session['user_id'], parcel_id))
+                (request.method == 'POST', user_id(), parcel_id))
     conn.commit()
     cur.close()
 
@@ -509,12 +572,8 @@ def list_parcels():
         'parcels': []
     }
 
-    # Check if the user is authenticated.
-    if 'user_id' not in session:
-        return {
-            'title': 'Not logged in',
-            'message': 'Please log in to have access to the parcels list.'
-        }, 401
+    # Check if we are authorized.
+    http_authenticate('auth_token')
 
     # Get the list from the database.
     conn = connect_db()
@@ -528,7 +587,7 @@ def list_parcels():
                 'ON history_cache.parcel_id = user_parcels.parcel_id '
                 'WHERE user_parcels.user_id = ? '
                 'ORDER BY history_cache.retrieved DESC) AS sq '
-                'GROUP BY sq.parcel_id;', (session['user_id'],))
+                'GROUP BY sq.parcel_id;', (user_id(),))
     for row in cur.fetchall():
         # Build up the tracked object.
         carrier = carriers.from_id(row[1])(row[2])

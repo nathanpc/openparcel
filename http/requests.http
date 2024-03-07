@@ -6,6 +6,7 @@ GET http://{{host}}/ping
 ### PackageTrack
 # Get the tracking history of a package.
 GET http://{{host}}/track/{{carrier_id}}/{{tracking_code}}
+X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### UserRegister
@@ -17,24 +18,20 @@ username = {{username}} &
 password = {{password}}
 
 
-### UserLogin
+### AuthTokenGenerate
 # Logs the use into the system.
-POST http://{{host}}/login
+POST http://{{host}}/auth/token/new
 Content-Type: application/x-www-form-urlencoded
+X-Auth-Token: {{username}}:{{password}}
 
-username = {{username}} &
-password = {{password}}
-
-
-### UserLogout
-# Logs the user out of the system.
-GET http://{{host}}/logout
+description = PyCharm HTTP Request
 
 
 ### FavoritePackage
 # Marks a tracked package as favorite.
 POST http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
 Content-Type: application/x-www-form-urlencoded
+X-Auth-Token: {{username}}:{{auth_token}}
 
 name = {{parcel_name}}
 
@@ -43,6 +40,7 @@ name = {{parcel_name}}
 # Marks a tracked package as favorite using its ID.
 POST http://{{host}}/favorite/{{parcel_id}}
 Content-Type: application/x-www-form-urlencoded
+X-Auth-Token: {{username}}:{{auth_token}}
 
 name = {{parcel_name}}
 
@@ -50,23 +48,28 @@ name = {{parcel_name}}
 ### UnfavoritePackage
 # Removes a tracked package from the favorites.
 DELETE http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
+X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### UnfavoritePackageByID
 # Removes a tracked package from the favorites using its ID.
 DELETE http://{{host}}/favorite/{{parcel_id}}
+X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### MarkDelivered
 # Flags a favorite parcel as delivered.
 POST http://{{host}}/deliver/{{parcel_id}}
+X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### MarkNotDelivered
 # Flags a favorite parcel as not delivered.
 DELETE http://{{host}}/deliver/{{parcel_id}}
+X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### ListUserPackages
 # Lists all of the user's tracked packages.
 GET http://{{host}}/parcels
+X-Auth-Token: {{username}}:{{auth_token}}

@@ -6,6 +6,30 @@ import errno
 from typing import Optional
 
 
+class TitledException(Exception):
+    """An exception that has a title and a message associated with it."""
+
+    def __init__(self, title: str, message: str, status_code: int):
+        self.title = title
+        self.message = message
+        self.status_code = status_code
+
+    def resp_dict(self) -> dict:
+        """Returns the equivalent response dictionary for the web service."""
+        return {
+            'title': self.title,
+            'message': self.message
+        }
+
+
+class NotEnoughParameters(TitledException):
+    """Not all the required parameters were passed to us."""
+
+
+class AuthenticationFailed(TitledException):
+    """Raised when the user authentication failed for any reason."""
+
+
 class TrackingCodeNotFound(Exception):
     """No tracking code was supplied, or it doesn't exist."""
 
@@ -18,7 +42,7 @@ class ScrapingJsNotFound(FileNotFoundError):
                          filename)
 
 
-class ScrapingReturnedError(Exception):
+class ScrapingReturnedError(TitledException):
     """Error raised when the scraping script failed to scrape the website in a
     predictable manner and reported on it."""
 
@@ -48,10 +72,3 @@ class ScrapingReturnedError(Exception):
 
         return 'An unknown, but expected, error occurred while scraping the ' \
                'website.'
-
-    def resp_dict(self) -> dict:
-        """Returns the equivalent response dictionary for the web service."""
-        return {
-            'title': self.title,
-            'message': self.message
-        }

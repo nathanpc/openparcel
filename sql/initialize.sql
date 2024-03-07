@@ -14,6 +14,18 @@ CREATE TABLE IF NOT EXISTS users(
 	salt        TEXT        NOT NULL
 );
 
+-- User application authentication tokens.
+CREATE TABLE IF NOT EXISTS auth_tokens(
+	token           TEXT        PRIMARY KEY     NOT NULL,
+	user_id         INTEGER     NOT NULL,
+	description     TEXT        NOT NULL,
+	active          BOOLEAN     NOT NULL        DEFAULT TRUE,
+
+	FOREIGN KEY (user_id) REFERENCES users(id)
+		ON UPDATE CASCADE
+		ON DELETE CASCADE
+);
+
 -- Tracked parcels. Maintains a list of all the parcels tracked by the system.
 CREATE TABLE IF NOT EXISTS parcels(
 	id              INTEGER     PRIMARY KEY AUTOINCREMENT,
