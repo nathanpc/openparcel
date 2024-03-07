@@ -168,12 +168,23 @@ def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     secret = auth_key[1]
 
     # Perform the authentication.
+    err = None
     if 'password' in use_secrets:
-        return authenticate(username, password=secret)
+        try:
+            return authenticate(username, password=secret)
+        except TitledException as e:
+            err = e
     if 'auth_token' in use_secrets:
-        return authenticate(username, auth_token=secret)
+        try:
+            return authenticate(username, auth_token=secret)
+        except TitledException as e:
+            err = e
     else:
         raise NotImplementedError('Unsupported secret type')
+
+    # Raise an exception if something went wrong.
+    if err is not None:
+        raise err
 
 
 def user_id() -> Optional[int]:
