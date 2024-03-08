@@ -7,7 +7,6 @@ import os
 import re
 import secrets
 import sqlite3
-import traceback
 from typing import Optional
 
 import DrissionPage.errors
@@ -15,8 +14,8 @@ import yaml
 from flask import Flask, request, g
 
 import openparcel.carriers as carriers
-from openparcel.exceptions import (ScrapingReturnedError, NotEnoughParameters,
-                                   AuthenticationFailed, TitledException)
+from openparcel.exceptions import (NotEnoughParameters,AuthenticationFailed,
+                                   TitledException, ScrapingBrowserError)
 
 # Check if we have a configuration file present.
 config_path = 'config/config.yml'
@@ -71,25 +70,30 @@ def authenticate(username: str, password: str = None,
 
     # Perform a bunch of sanity checks.
     if username is None and password is None and auth_token is None:
-        raise NotEnoughParameters('Nothing was provided for authentication',
-                                  'None of the required parameters were set. '
-                                  'Either send the username, and password or '
-                                  'authentication token.', 401)
+        raise NotEnoughParameters(
+            title='Nothing was provided for authentication',
+            message='None of the required parameters were set. Either send the '
+                    'username, and password or authentication token.',
+            status_code=401)
     elif username is None:
-        raise NotEnoughParameters('Missing username',
-                                  'In order to authenticate a username and '
-                                  'password must be supplied.', 400)
+        raise NotEnoughParameters(
+            title='Missing username',
+            message='In order to authenticate a username and password must be '
+                    'supplied.',
+            status_code=400)
     elif password is None and auth_token is None:
-        raise NotEnoughParameters('Missing password or authentication token',
-                                  'In order to authenticate a password or an '
-                                  'authentication token must be supplied.',
-                                  400)
+        raise NotEnoughParameters(
+            title='Missing password or authentication token',
+            message='In order to authenticate a password or an authentication '
+                    'token must be supplied.',
+            status_code=400)
     elif username is not None and password is not None and \
             auth_token is not None:
-        raise AuthenticationFailed('Both secrets were provided',
-                                   'Either password or authentication token '
-                                   'must be provided, but not both of them.',
-                                   422)
+        raise AuthenticationFailed(
+            title='Both secrets were provided',
+            message='Either password or authentication token must be provided, '
+                    'but not both of them.',
+            status_code=422)
 
     # Check the username and get the salt used to generate the password hash.
     conn = connect_db()
@@ -97,9 +101,11 @@ def authenticate(username: str, password: str = None,
     cur.execute('SELECT salt FROM users WHERE username = ?', (username,))
     row = cur.fetchone()
     if row is None:
-        raise AuthenticationFailed('Invalid username',
-                                   'Username is not in our database. Maybe '
-                                   'you have misspelt it?', 401)
+        raise AuthenticationFailed(
+            title='Invalid username',
+            message='Username is not in our database. Maybe you have misspelt '
+                    'it?',
+            status_code=401)
     salt = bytes.fromhex(row[0])
     cur.close()
 
@@ -114,10 +120,11 @@ def authenticate(username: str, password: str = None,
                     '(password = ?)', (username, password_hash.hex()))
         row = cur.fetchone()
         if row is None:
-            raise AuthenticationFailed('Wrong password',
-                                       'Credentials did not match any users '
-                                       'in our database. Check if you have '
-                                       'typed the right password.', 401)
+            raise AuthenticationFailed(
+                title='Wrong password',
+                message='Credentials did not match any users in our database. '
+                        'Check if you have typed the right password.',
+                status_code=401)
     else:
         # Authenticate using the authentication token.
         cur.execute('SELECT auth_tokens.user_id FROM auth_tokens '
@@ -127,11 +134,12 @@ def authenticate(username: str, password: str = None,
                     (auth_token, username))
         row = cur.fetchone()
         if row is None:
-            raise AuthenticationFailed('Wrong authentication token',
-                                       'Credentials did not match anything '
-                                       'in our database. Check if you have '
-                                       'the right authentication token for '
-                                       'this user.', 401)
+            raise AuthenticationFailed(
+                title='Wrong authentication token',
+                message='Credentials did not match anything in our database. '
+                        'Check if you have the right authentication token for '
+                        'this user.',
+                status_code=401)
     cur.close()
 
     # Caches the username and user ID for the request lifecycle.
@@ -153,17 +161,19 @@ def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     if 'X-Auth-Token' in request.headers:
         auth_key = request.headers['X-Auth-Token']
     if auth_key is None:
-        raise NotEnoughParameters('Missing authentication key',
-                                  'An authentication key (username and '
-                                  'authentication token) must be provided to '
-                                  'access this resource.', 401)
+        raise NotEnoughParameters(
+            title='Missing authentication key',
+            message='An authentication key (username and authentication token) '
+                    'must be provided to access this resource.',
+            status_code=401)
 
     # Break down the authentication key and perform some general checks.
     auth_key = auth_key.split(':')
     if len(auth_key) != 2 or not auth_key[0].strip() or not auth_key[1].strip():
-        raise AuthenticationFailed('Invalid authentication key',
-                                   'Format of the provided authentication '
-                                   'key is not valid.', 200)
+        raise AuthenticationFailed(
+            title='Invalid authentication key',
+            message='Format of the provided authentication key is not valid.',
+            status_code=200)
     username = auth_key[0].lower()
     secret = auth_key[1]
 
@@ -215,11 +225,10 @@ def track(carrier_id: str, code: str, force: bool = False):
     # Get the requested carrier.
     carrier = carriers.from_id(carrier_id)
     if carrier is None:
-        return {
-            'title': 'Invalid carrier ID',
-            'message': 'Carrier ID does not match any of the available '
-                       'carriers.'
-        }, 422
+        raise TitledException(
+            title='Invalid carrier ID',
+            message='Carrier ID does not match any of the available carriers.',
+            status_code=422)
     carrier = carrier(code)
 
     # Check if it has been previously cached.
@@ -281,19 +290,7 @@ def track(carrier_id: str, code: str, force: bool = False):
         return carrier.get_resp_dict()
     except DrissionPage.errors.BaseError as e:
         # Probably an error with our scraping stuff.
-        return {
-            'title': 'Scraping error',
-            'message': 'An error occurred while trying to fetch the tracking '
-                       'history from the carrier\'s website.',
-            'trace': traceback.format_exc(),
-            'data': {
-                'carrierId': carrier_id,
-                'trackingCode': code
-            }
-        }, 500
-    except ScrapingReturnedError as e:
-        # Looks like we caught an error in the scraped page.
-        return e.resp_dict(), 422
+        raise ScrapingBrowserError(e, carrier_id, code)
 
 
 @app.route('/register', methods=['POST'])
@@ -304,43 +301,43 @@ def register():
 
     # Check if we are accepting registrations.
     if not app.config['ALLOW_REGISTRATION']:
-        return {
-            'title': 'Registrations disabled',
-            'message': 'Registrations have been disabled by the administrator.'
-        }, 422
+        raise TitledException(
+            title='Registrations disabled',
+            message='Registrations have been disabled by the administrator.',
+            status_code=422)
 
     # Check if we have both username and password.
     if username is None or password is None:
-        return {
-            'title': 'Missing username or password',
-            'message': 'In order to register a username and password must be '
-                       'supplied.'
-        }, 400
+        raise TitledException(
+            title='Missing username or password',
+            message='In order to register a username and password must be '
+                    'supplied.',
+            status_code=400)
 
     # Check if the username is clean.
     if not re.match(r'^[a-z0-9_]+$', username):
-        return {
-            'title': 'Invalid username',
-            'message': 'Username must contain only lowercase letters, numbers, '
-                       'and underscore.'
-        }, 422
+        raise TitledException(
+            title='Invalid username',
+            message='Username must contain only lowercase letters, numbers, '
+                    'and underscore.',
+            status_code=422)
 
     # Check if the password is long enough.
     if len(password) < 6:
-        return {
-            'title': 'Invalid password',
-            'message': 'Password must have at least 6 characters.'
-        }, 422
+        raise TitledException(
+            title='Invalid password',
+            message='Password must have at least 6 characters.',
+            status_code=422)
 
     # Check if the username already exists.
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT id FROM users WHERE username = ?', (username,))
     if cur.fetchone() is not None:
-        return {
-            'title': 'Username already exists',
-            'message': 'Username is already in use. Please select another one.'
-        }, 422
+        raise TitledException(
+            title='Username already exists',
+            message='Username is already in use. Please select another one.',
+            status_code=422)
     cur.close()
 
     # Hash the password.
@@ -374,14 +371,17 @@ def create_auth_token(description: str = None, username: str = None,
     # Get the description.
     if description is None:
         if 'description' not in request.form:
-            raise TitledException('Description not provided',
-                                  'You must provide a description for the '
-                                  'authorization token that will be generated.',
-                                  400)
+            raise TitledException(
+                title='Description not provided',
+                message='You must provide a description for the authorization '
+                        'token that will be generated.',
+                status_code=400)
         elif request.form['description'].strip() == '':
-            raise TitledException('Empty description provided',
-                                  'A meaningful description is required for '
-                                  'generating an authentication token.', 422)
+            raise TitledException(
+                title='Empty description provided',
+                message='A meaningful description is required for generating '
+                        'an authentication token.',
+                status_code=422)
 
         description = request.form['description'].strip()
 
@@ -464,10 +464,10 @@ def favorite_parcel(carrier_id: str, code: str, name: str = None,
 
     # Check if the parcel has been tracked in the past.
     if row is None:
-        return {
-            'title': 'Parcel does not exist',
-            'message': 'Parcel does not exist. Try tracking it first.'
-        }, 422
+        raise TitledException(
+            title='Parcel does not exist',
+            message='Parcel does not exist. Try tracking it first.',
+            status_code=422)
 
     # Delegate the operation.
     parcel_id = row[0]
@@ -494,17 +494,17 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
     row = cur.fetchone()
     if row is not None:
         if request.method == 'POST':
-            return {
-                'title': 'Already in favorites',
-                'message': 'The parcel is already in the favorites list.'
-            }, 422
+            raise TitledException(
+                title='Already in favorites',
+                message='The parcel is already in the favorites list.',
+                status_code=422)
         elif request.method == 'DELETE':
             name = row[0]
     elif row is None and request.method == 'DELETE':
-        return {
-            'title': 'Favorite does not exist',
-            'message': 'The requested parcel is not in the favorites list.'
-        }, 422
+        raise TitledException(
+            title='Favorite does not exist',
+            message='The requested parcel is not in the favorites list.',
+            status_code=422)
     cur.close()
 
     # Handle the operation of removing a parcel from the favorites.
@@ -524,10 +524,10 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
 
     # Perform some cursory checks.
     if name is None:
-        return {
-            'title': 'Missing parcel name',
-            'message': 'Please supply a parcel name to be stored.'
-        }, 400
+        raise TitledException(
+            title='Missing parcel name',
+            message='Please supply a parcel name to be stored.',
+            status_code=400)
 
     # Check if the parcel ID actually exists in the system.
     if not skip_id_check:
@@ -535,10 +535,10 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
         cur.execute('SELECT id FROM parcels WHERE id = ?', (parcel_id,))
         row = cur.fetchone()
         if row is None:
-            return {
-                'title': 'Parcel does not exist',
-                'message': 'Parcel does not exist. Try tracking it first.'
-            }, 422
+            raise TitledException(
+                title='Parcel does not exist',
+                message='Parcel does not exist. Try tracking it first.',
+                status_code=422)
         cur.close()
 
     # Store the favorite information in the database.
@@ -573,21 +573,21 @@ def deliver_flag_parcel(parcel_id: int):
 
     # Perform cursory checks.
     if row is None:
-        return {
-            'title': 'Favorite does not exist',
-            'message': 'In order to mark a parcel as delivered it must be in '
-                       'the favorites list first.'
-        }, 422
+        raise TitledException(
+            title='Favorite does not exist',
+            message='In order to mark a parcel as delivered it must be in the '
+                    'favorites list first.',
+            status_code=422)
     elif request.method == 'POST' and row[2]:
-        return {
-            'title': 'Favorite already delivered',
-            'message': 'The parcel has already been marked as delivered.'
-        }, 422
+        raise TitledException(
+            title='Favorite already delivered',
+            message='The parcel has already been marked as delivered.',
+            status_code=422)
     elif request.method == 'DELETE' and not row[2]:
-        return {
-            'title': 'Favorite not yet delivered',
-            'message': 'The parcel has not been marked as delivered previously.'
-        }, 422
+        raise TitledException(
+            title='Favorite not yet delivered',
+            message='The parcel has not been marked as delivered previously.',
+            status_code=422)
 
     # Toggle the parcel's delivered flag.
     cur = conn.cursor()

@@ -2,8 +2,11 @@
 
 import os
 import errno
+import traceback
 
 from typing import Optional
+
+import DrissionPage.errors
 
 
 class TitledException(Exception):
@@ -50,8 +53,7 @@ class ScrapingReturnedError(TitledException):
         self.err_id: int = err_obj['code']['id']
         self.code: str = err_obj['code']['name']
         self.data: Optional[dict] = err_obj['data']
-        self.title: str = self._get_title()
-        self.message: str = self._get_description()
+        super().__init__(self._get_title(), self._get_description(), 422)
 
     def _get_title(self) -> str:
         match self.code:
@@ -60,6 +62,7 @@ class ScrapingReturnedError(TitledException):
             case 'InvalidTrackingCode':
                 return 'Invalid tracking code'
 
+        self.status_code = 500
         return 'Unknown error'
 
     def _get_description(self) -> str:
@@ -72,3 +75,22 @@ class ScrapingReturnedError(TitledException):
 
         return 'An unknown, but expected, error occurred while scraping the ' \
                'website.'
+
+
+class ScrapingBrowserError(TitledException):
+    """Error raised when the scraping browser raises an exception and crashes.
+    These are usually caused by an unexpected issue while scraping."""
+
+    def __init__(self, err: DrissionPage.errors.BaseError, carrier_id: str,
+                 tracking_code: str):
+        super().__init__(
+            title='Scraping error',
+            message='An error occurred while trying to fetch the tracking '
+                    'history from the carrier\'s website.',
+            status_code=500)
+        self.origin = err
+        self.trace: str = traceback.format_exc()
+        self.data: dict = {
+            'carrierId': carrier_id,
+            'trackingCode': tracking_code
+        }
