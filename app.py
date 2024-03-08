@@ -366,7 +366,7 @@ def create_auth_token(description: str = None, username: str = None,
                       password: str = None):
     """Creates a new authentication token for a user."""
     # Authenticate using the username and password first.
-    if username is None and password is None:
+    if username is None:
         http_authenticate('password')
     else:
         authenticate(username, password)
@@ -400,11 +400,44 @@ def create_auth_token(description: str = None, username: str = None,
     }
 
 
-@app.route('/auth/token/<auth_token>', methods=['DELETE'])
-def revoke_auth_token(auth_token: str = None, username: str = None,
-                      password: str = None):
+@app.route('/auth/token/<revoke_token>', methods=['DELETE'])
+def revoke_auth_token(revoke_token: str = None, username: str = None,
+                      password: str = None, auth_token: str = None):
     """Revokes an authentication token of a user."""
-    # TODO: Implement this.
+    if username is None:
+        http_authenticate(('password', 'auth_token'))
+    else:
+        authenticate(username, password, auth_token)
+
+    # Check if the authentication token to revoke actually exists.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute('SELECT description, active FROM auth_tokens '
+                'WHERE (token = ?) AND (user_id = ?) AND active',
+                (revoke_token, user_id()))
+    row = cur.fetchone()
+    if row is None:
+        raise TitledException(
+            title='Authentication token not found',
+            message='The authentication token provided to be revoked did not '
+                    'match anything in our database. Please check if you have '
+                    'the right authentication token for this user.',
+            status_code=422)
+    cur.close()
+
+    # Mark the token as inactive.
+    cur = conn.cursor()
+    cur.execute('UPDATE auth_tokens SET active = false '
+                'WHERE (token = ?) AND (user_id = ?)',
+                (revoke_token, user_id()))
+    conn.commit()
+    cur.close()
+
+    return {
+        'title': 'Authentication token revoked',
+        'message': f'The authentication token for {row[0]} has been '
+                   'successfully revoked.'
+    }
 
 
 @app.route('/favorite/<carrier_id>/<code>', methods=['POST', 'DELETE'])

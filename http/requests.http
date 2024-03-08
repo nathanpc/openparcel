@@ -19,12 +19,18 @@ password = {{password}}
 
 
 ### AuthTokenGenerate
-# Logs the use into the system.
+# Generates a new authentication token for the user.
 POST http://{{host}}/auth/token/new
 Content-Type: application/x-www-form-urlencoded
 X-Auth-Token: {{username}}:{{password}}
 
 description = PyCharm HTTP Request
+
+
+### AuthTokenRevoke
+# Revokes one of the authentication tokens of the user.
+DELETE http://{{host}}/auth/token/{{auth_token}}
+X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### FavoritePackage
