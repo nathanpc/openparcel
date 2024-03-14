@@ -41,7 +41,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_parcels_tracking_code
 -- Relationship table for a user's tracked parcels.
 CREATE TABLE IF NOT EXISTS user_parcels(
 	name        TEXT        NOT NULL,
-	delivered   BOOLEAN     NOT NULL    DEFAULT FALSE,
+	archived    BOOLEAN     NOT NULL    DEFAULT FALSE,
 	user_id     INTEGER,
 	parcel_id   INTEGER,
 

@@ -14,7 +14,7 @@ import yaml
 from flask import Flask, request, g
 
 import openparcel.carriers as carriers
-from openparcel.exceptions import (NotEnoughParameters,AuthenticationFailed,
+from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError)
 
 # Check if we have a configuration file present.
@@ -235,7 +235,7 @@ def track(carrier_id: str, code: str, force: bool = False):
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT parcels.*, history_cache.*, '
-                ' user_parcels.name, user_parcels.delivered, '
+                ' user_parcels.name, user_parcels.archived, '
                 ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
                 'FROM history_cache '
                 'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
@@ -252,11 +252,11 @@ def track(carrier_id: str, code: str, force: bool = False):
     if row is not None:
         timeout = app.config['CACHE_REFRESH_TIMEOUT']
         force = request.args.get('force', default=force, type=bool)
-        delivered = row[-2]
+        archived = row[-2]
         parcel_name = row[-3]
 
         # Check if we should return the cached value.
-        if not force and (abs(row[-1]) <= timeout or delivered):
+        if not force and (abs(row[-1]) <= timeout or archived):
             carrier.from_cache(row[0], json.loads(row[7]),
                                datetime.datetime.fromisoformat(row[6]),
                                parcel_name=parcel_name)
@@ -440,10 +440,10 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
     }
 
 
-@app.route('/favorite/<carrier_id>/<code>', methods=['POST', 'DELETE'])
-def favorite_parcel(carrier_id: str, code: str, name: str = None,
-                    delivered: bool = False):
-    """Stores a parcel into the user's favorites list."""
+@app.route('/save/<carrier_id>/<code>', methods=['POST', 'DELETE'])
+def save_parcel(carrier_id: str, code: str, name: str = None,
+                delivered: bool = False):
+    """Stores a parcel into the user's tracked parcels list."""
     name = request.form.get('name') if name is None else None
     # TODO: Fix this implementation. Name is currently ignored.
 
@@ -466,26 +466,27 @@ def favorite_parcel(carrier_id: str, code: str, name: str = None,
     if row is None:
         raise TitledException(
             title='Parcel does not exist',
-            message='Parcel does not exist. Try tracking it first.',
+            message='Parcel was not found in our system. Try tracking it for '
+                    ' its first time before attempting to save it.',
             status_code=422)
 
     # Delegate the operation.
     parcel_id = row[0]
     name = row[1]
-    return favorite_parcel_id(parcel_id, name, delivered, skip_id_check=True)
+    return save_parcel_id(parcel_id, name, delivered, skip_id_check=True)
 
 
-@app.route('/favorite/<parcel_id>', methods=['POST', 'DELETE'])
-def favorite_parcel_id(parcel_id: int, name: str = None,
-                       delivered: bool = False, skip_id_check: bool = False):
-    """Stores a parcel into the user's favorites list."""
+@app.route('/save/<parcel_id>', methods=['POST', 'DELETE'])
+def save_parcel_id(parcel_id: int, name: str = None,
+                   archived: bool = False, skip_id_check: bool = False):
+    """Stores a parcel into the user's tracked parcels list."""
     if name is None:
         name = request.form.get('name') or None
 
     # Check if we are authorized.
     http_authenticate('auth_token')
 
-    # Check if the parcel is already in the favorites.
+    # Check if the parcel is already in the user's list.
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT name FROM user_parcels '
@@ -495,21 +496,21 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
     if row is not None:
         if request.method == 'POST':
             raise TitledException(
-                title='Already in favorites',
-                message='The parcel is already in the favorites list.',
+                title='Already saved',
+                message='The parcel is already in the user\'s list.',
                 status_code=422)
         elif request.method == 'DELETE':
             name = row[0]
     elif row is None and request.method == 'DELETE':
         raise TitledException(
-            title='Favorite does not exist',
-            message='The requested parcel is not in the favorites list.',
+            title='Saved parcel does not exist',
+            message='The requested parcel is not in the user\'s list.',
             status_code=422)
     cur.close()
 
-    # Handle the operation of removing a parcel from the favorites.
+    # Handle the operation of removing a parcel from the user's list.
     if request.method == 'DELETE':
-        # Remove it from the favorites.
+        # Remove it from the saved parcels list.
         cur = conn.cursor()
         cur.execute('DELETE FROM user_parcels '
                     'WHERE (parcel_id = ?) AND (user_id = ?)',
@@ -518,8 +519,8 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
         cur.close()
 
         return {
-            'title': 'Removed from favorites',
-            'message': f'Parcel "{name}" was removed from the favorites list.'
+            'title': 'Removed from saved list',
+            'message': f'Parcel "{name}" was removed from the user\'s list.'
         }
 
     # Perform some cursory checks.
@@ -537,35 +538,37 @@ def favorite_parcel_id(parcel_id: int, name: str = None,
         if row is None:
             raise TitledException(
                 title='Parcel does not exist',
-                message='Parcel does not exist. Try tracking it first.',
+                message='Parcel was not found in our system. Try tracking it '
+                        'for its first time before attempting to save it.',
                 status_code=422)
         cur.close()
 
-    # Store the favorite information in the database.
+    # Store the saved parcel information in the database.
     name = name.strip()
     cur = conn.cursor()
-    cur.execute('INSERT INTO user_parcels (name, delivered, user_id, parcel_id) '
+    cur.execute('INSERT INTO user_parcels (name, archived, user_id, parcel_id) '
                 'VALUES (?, ?, ?, ?)',
-                (name, delivered, user_id(), parcel_id))
+                (name, archived, user_id(), parcel_id))
     conn.commit()
     cur.close()
 
     return {
-        'title': 'Added to favorites',
-        'message': 'The parcel has been successfully added to your favorites.'
+        'title': 'Parcel saved',
+        'message': 'The parcel has been successfully added to your tracked '
+                   'parcels list.'
     }
 
 
-@app.route('/deliver/<parcel_id>', methods=['POST', 'DELETE'])
-def deliver_flag_parcel(parcel_id: int):
-    """Marks a favorite parcel as delivered or not."""
+@app.route('/archive/<parcel_id>', methods=['POST', 'DELETE'])
+def archive_flag_parcel(parcel_id: int):
+    """Marks a saved parcel as archived or not."""
     # Check if we are authorized.
     http_authenticate('auth_token')
 
-    # Get the favorite parcel.
+    # Get the saved parcel.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT parcel_id, name, delivered FROM user_parcels '
+    cur.execute('SELECT parcel_id, name, archived FROM user_parcels '
                 'WHERE (user_id = ?) AND (parcel_id = ?)',
                 (user_id(), parcel_id))
     row = cur.fetchone()
@@ -574,24 +577,23 @@ def deliver_flag_parcel(parcel_id: int):
     # Perform cursory checks.
     if row is None:
         raise TitledException(
-            title='Favorite does not exist',
-            message='In order to mark a parcel as delivered it must be in the '
-                    'favorites list first.',
+            title='Parcel does not exist',
+            message='In order to archive a parcel it must be saved first.',
             status_code=422)
     elif request.method == 'POST' and row[2]:
         raise TitledException(
-            title='Favorite already delivered',
-            message='The parcel has already been marked as delivered.',
+            title='Parcel already archived',
+            message='The parcel has already been marked as archived.',
             status_code=422)
     elif request.method == 'DELETE' and not row[2]:
         raise TitledException(
-            title='Favorite not yet delivered',
-            message='The parcel has not been marked as delivered previously.',
+            title='Parcel not yet archived',
+            message='The parcel has not been marked as archived previously.',
             status_code=422)
 
     # Toggle the parcel's delivered flag.
     cur = conn.cursor()
-    cur.execute('UPDATE user_parcels SET delivered = ? '
+    cur.execute('UPDATE user_parcels SET archived = ? '
                 'WHERE (user_id = ?) AND (parcel_id = ?)',
                 (request.method == 'POST', user_id(), parcel_id))
     conn.commit()
@@ -600,13 +602,13 @@ def deliver_flag_parcel(parcel_id: int):
     # Respond with a pretty message.
     if request.method == 'POST':
         return {
-            'title': 'Parcel marked as delivered',
-            'message': f'{row[1]} has been marked as delivered.'
+            'title': 'Parcel archived',
+            'message': f'{row[1]} has been archived successfully.'
         }
     else:
         return {
-            'title': 'Parcel no longer delivered',
-            'message': f'{row[1]} has been marked as not yet delivered.'
+            'title': 'Parcel no longer archived',
+            'message': f'{row[1]} has been unarchived successfully.'
         }
 
 

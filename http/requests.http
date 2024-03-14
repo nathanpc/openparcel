@@ -33,45 +33,45 @@ DELETE http://{{host}}/auth/token/{{auth_token}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
-### FavoritePackage
-# Marks a tracked package as favorite.
-POST http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
+### SavePackage
+# Saves a tracked package to the user's list.
+POST http://{{host}}/save/{{carrier_id}}/{{tracking_code}}
 Content-Type: application/x-www-form-urlencoded
 X-Auth-Token: {{username}}:{{auth_token}}
 
 name = {{parcel_name}}
 
 
-### FavoritePackageByID
-# Marks a tracked package as favorite using its ID.
-POST http://{{host}}/favorite/{{parcel_id}}
+### SavePackageByID
+# Saves a tracked package to the user's list using its ID.
+POST http://{{host}}/save/{{parcel_id}}
 Content-Type: application/x-www-form-urlencoded
 X-Auth-Token: {{username}}:{{auth_token}}
 
 name = {{parcel_name}}
 
 
-### UnfavoritePackage
-# Removes a tracked package from the favorites.
-DELETE http://{{host}}/favorite/{{carrier_id}}/{{tracking_code}}
+### SavePackageUndo
+# Removes a tracked package from the user's list.
+DELETE http://{{host}}/save/{{carrier_id}}/{{tracking_code}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
-### UnfavoritePackageByID
-# Removes a tracked package from the favorites using its ID.
-DELETE http://{{host}}/favorite/{{parcel_id}}
+### SavePackageUndoByID
+# Removes a tracked package from the user's list using its ID.
+DELETE http://{{host}}/save/{{parcel_id}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
-### MarkDelivered
-# Flags a favorite parcel as delivered.
-POST http://{{host}}/deliver/{{parcel_id}}
+### ArchivePackage
+# Flags a user's parcel as archived.
+POST http://{{host}}/archive/{{parcel_id}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### MarkNotDelivered
-# Flags a favorite parcel as not delivered.
-DELETE http://{{host}}/deliver/{{parcel_id}}
+# Flags a user's parcel as not archived.
+DELETE http://{{host}}/archive/{{parcel_id}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
