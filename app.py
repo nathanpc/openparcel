@@ -252,9 +252,12 @@ def track(carrier_id: str, code: str, force: bool = False):
     # Get the parcel ID if we even have one.
     if row is not None:
         timeout = app.config['CACHE_REFRESH_TIMEOUT']
-        force = request.args.get('force', default=force, type=bool)
         archived = row[-2]
         parcel_name = row[-3]
+
+        # Ensure that only the superuser can issue a force from the outside.
+        if not force and user_id() == 1:
+            force = request.args.get('force', default=force, type=bool)
 
         # Check if we should return the cached value.
         if not force and (abs(row[-1]) <= timeout or archived):
