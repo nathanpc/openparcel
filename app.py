@@ -245,8 +245,7 @@ def track(carrier_id: str, code: str, force: bool = False):
                 'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?) '
                 ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
                 'ORDER BY history_cache.retrieved DESC LIMIT 1',
-                (user_id(), carrier_id, code,
-                 60 * 60 * 24 * app.config['PARCEL_OUTDATED_PERIOD']))
+                (user_id(), carrier_id, code, carrier.outdated_period_secs))
     row = cur.fetchone()
     cur.close()
 
@@ -260,6 +259,7 @@ def track(carrier_id: str, code: str, force: bool = False):
         # Check if we should return the cached value.
         if not force and (abs(row[-1]) <= timeout or archived):
             carrier.from_cache(row[0], json.loads(row[7]),
+                               datetime.datetime.fromisoformat(row[3]),
                                datetime.datetime.fromisoformat(row[6]),
                                parcel_name=parcel_name)
             return carrier.get_resp_dict()
@@ -629,19 +629,20 @@ def list_parcels():
     cur = conn.cursor()
     cur.execute('SELECT DISTINCT * FROM '
                 '(SELECT user_parcels.name, parcels.carrier,'
-                ' parcels.tracking_code, history_cache.* FROM user_parcels '
-                'LEFT JOIN parcels '
-                'ON parcels.id = user_parcels.parcel_id '
+                ' parcels.tracking_code, parcels.created, history_cache.* '
+                'FROM user_parcels '
+                'LEFT JOIN parcels ON parcels.id = user_parcels.parcel_id '
                 'LEFT JOIN history_cache '
-                'ON history_cache.parcel_id = user_parcels.parcel_id '
+                ' ON history_cache.parcel_id = user_parcels.parcel_id '
                 'WHERE user_parcels.user_id = ? '
                 'ORDER BY history_cache.retrieved DESC) AS sq '
-                'GROUP BY sq.parcel_id;', (user_id(),))
+                'GROUP BY sq.parcel_id', (user_id(),))
     for row in cur.fetchall():
         # Build up the tracked object.
         carrier = carriers.from_id(row[1])(row[2])
-        carrier.from_cache(row[4], json.loads(row[6]),
-                           datetime.datetime.fromisoformat(row[5]),
+        carrier.from_cache(row[5], json.loads(row[7]),
+                           datetime.datetime.fromisoformat(row[3]),
+                           datetime.datetime.fromisoformat(row[6]),
                            parcel_name=row[0])
 
         # Append the object to the list.

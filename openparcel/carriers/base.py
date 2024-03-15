@@ -19,13 +19,14 @@ class BaseCarrier:
     name: str = None
     tracking_url_base: str = None
     accent_color: str = '#D6BC9C'
+    outdated_period_secs: int = 60 * 60 * 24 * 30 * 6
 
     def __init__(self, tracking_code: str = None):
         self.tracking_url: Template = Template(self.tracking_url_base)
         self.tracking_code: str = tracking_code
         self.cached: bool = False
-        self.last_updated: datetime.datetime = datetime.datetime.now(
-            datetime.UTC)
+        self.created: datetime.datetime = datetime.datetime.now(datetime.UTC)
+        self.last_updated: datetime.datetime = self.created
         self.db_id: Optional[int] = None
         self.parcel_name: Optional[str] = None
         self._resp_dict: Optional[dict] = None
@@ -45,13 +46,19 @@ class BaseCarrier:
         """Fetches tracking updates from the carrier's tracking website."""
         raise NotImplementedError
 
-    def from_cache(self, db_id: int, cache: dict,
+    def is_outdated(self) -> bool:
+        """Checks if the parcel is outdated given its creation date."""
+        return ((datetime.datetime.now(datetime.UTC) - self.created) >
+                datetime.timedelta(seconds=self.outdated_period_secs))
+
+    def from_cache(self, db_id: int, cache: dict, created: datetime.datetime,
                    last_updated: datetime.datetime, parcel_name: str = None):
         """Populates the object with data from a cached object."""
         self._resp_dict = cache
         self.db_id = db_id
         self.parcel_name = parcel_name
         self.cached = True
+        self.created = created
         self.last_updated = last_updated
 
     def get_resp_dict(self, extra: dict = None) -> dict:
@@ -60,15 +67,17 @@ class BaseCarrier:
         resp = self._resp_dict
 
         # Add additional information to object.
-        resp['accentColor'] = self.accent_color
-        resp['cached'] = self.cached
-        resp['lastUpdated'] = self.last_updated.isoformat()
         resp['id'] = self.db_id
         resp['name'] = self.parcel_name
+        resp['cached'] = self.cached
         resp['carrier'] = {
             'id': self.uid,
             'name': self.name
         }
+        resp['accentColor'] = self.accent_color
+        resp['created'] = self.created.isoformat()
+        resp['lastUpdated'] = self.last_updated.isoformat()
+        resp['outdated'] = self.is_outdated()
 
         # Append any extras.
         if extra is not None:
