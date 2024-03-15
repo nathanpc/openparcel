@@ -243,8 +243,10 @@ def track(carrier_id: str, code: str, force: bool = False):
                 ' ON (history_cache.parcel_id = user_parcels.parcel_id)'
                 ' AND (user_parcels.user_id = ?)'
                 'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?) '
+                ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
                 'ORDER BY history_cache.retrieved DESC LIMIT 1',
-                (user_id(), carrier_id, code))
+                (user_id(), carrier_id, code,
+                 60 * 60 * 24 * app.config['PARCEL_OUTDATED_PERIOD']))
     row = cur.fetchone()
     cur.close()
 
