@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS parcels(
 );
 CREATE INDEX IF NOT EXISTS idx_parcels_carrier
 	ON parcels(carrier);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_parcels_tracking_code
+CREATE INDEX IF NOT EXISTS idx_parcels_tracking_code
 	ON parcels(tracking_code);
 
 -- Relationship table for a user's tracked parcels.
