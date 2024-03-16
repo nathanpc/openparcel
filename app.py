@@ -266,18 +266,19 @@ def track(carrier_id: str, code: str, force: bool = False,
         if carrier.db_id is None:
             cond = '(parcels.carrier = ?) AND (parcels.tracking_code = ?) '
             cond_values = (carrier_id, code)
-        cur.execute('SELECT parcels.*, history_cache.*, '
-                    ' user_parcels.name, user_parcels.archived, '
-                    ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
-                    'FROM history_cache '
-                    'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
-                    'LEFT JOIN user_parcels '
-                    ' ON (history_cache.parcel_id = user_parcels.parcel_id) '
-                    ' AND (user_parcels.user_id = ?) '
-                    f'WHERE {cond} '
-                    ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
-                    'ORDER BY history_cache.retrieved DESC LIMIT 1',
-                    (user_id(),) + cond_values + (carrier.outdated_period_secs,))
+        cur.execute(
+            'SELECT parcels.*, history_cache.*, '
+            ' user_parcels.name, user_parcels.archived, '
+            ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+            'FROM history_cache '
+            'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
+            'LEFT JOIN user_parcels '
+            ' ON (history_cache.parcel_id = user_parcels.parcel_id) '
+            ' AND (user_parcels.user_id = ?) '
+            f'WHERE {cond} '
+            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
+            'ORDER BY history_cache.retrieved DESC LIMIT 1',
+            (user_id(),) + cond_values + (carrier.outdated_period_secs,))
         row = cur.fetchone()
         cur.close()
 
