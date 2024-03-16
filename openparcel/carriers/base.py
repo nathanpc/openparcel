@@ -29,6 +29,7 @@ class BaseCarrier:
         self.last_updated: datetime.datetime = self.created
         self.db_id: Optional[int] = None
         self.parcel_name: Optional[str] = None
+        self.archived: bool = False
         self._resp_dict: Optional[dict] = None
 
     def get_tracking_url(self) -> str:
@@ -52,11 +53,13 @@ class BaseCarrier:
                 datetime.timedelta(seconds=self.outdated_period_secs))
 
     def from_cache(self, db_id: int, cache: dict, created: datetime.datetime,
-                   last_updated: datetime.datetime, parcel_name: str = None):
+                   last_updated: datetime.datetime, parcel_name: str = None,
+                   archived: bool = False):
         """Populates the object with data from a cached object."""
         self._resp_dict = cache
         self.db_id = db_id
         self.parcel_name = parcel_name
+        self.archived = archived
         self.cached = True
         self.created = created
         self.last_updated = last_updated
@@ -70,6 +73,7 @@ class BaseCarrier:
         resp['id'] = self.db_id
         resp['name'] = self.parcel_name
         resp['cached'] = self.cached
+        resp['archived'] = self.archived
         resp['carrier'] = {
             'id': self.uid,
             'name': self.name

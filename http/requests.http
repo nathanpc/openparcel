@@ -9,6 +9,12 @@ GET http://{{host}}/track/{{carrier_id}}/{{tracking_code}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
+### PackageTrackByID
+# Get the tracking history of a package using its parcel ID.
+GET http://{{host}}/track/{{parcel_id}}
+X-Auth-Token: {{username}}:{{auth_token}}
+
+
 ### UserRegister
 # Registers the user in the database.
 POST http://{{host}}/register

@@ -14,6 +14,7 @@ import yaml
 from flask import Flask, request, g
 
 import openparcel.carriers as carriers
+from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError)
 
@@ -202,6 +203,13 @@ def user_id() -> Optional[int]:
     return g.user_id if is_authenticated() else None
 
 
+def should_refresh_parcel(parcel: BaseCarrier, timediff: float,
+                          force: bool = False) -> bool:
+    """Checks if a parcel tracking history is old enough to have timed out."""
+    timeout = app.config['CACHE_REFRESH_TIMEOUT']
+    return force or (not parcel.archived and abs(timediff) >= timeout)
+
+
 @app.route('/')
 def hello_world():
     return 'OpenParcel'
@@ -217,57 +225,84 @@ def ping_pong():
 
 
 @app.route('/track/<carrier_id>/<code>')
-def track(carrier_id: str, code: str, force: bool = False):
+def track(carrier_id: str, code: str, force: bool = False,
+          carrier: BaseCarrier = None):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
     # Check if we are authorized.
     http_authenticate('auth_token')
 
-    # Get the requested carrier.
-    carrier = carriers.from_id(carrier_id)
+    # Get the requested carrier if not provided.
     if carrier is None:
-        raise TitledException(
-            title='Invalid carrier ID',
-            message='Carrier ID does not match any of the available carriers.',
-            status_code=422)
-    carrier = carrier(code)
+        carrier = carriers.from_id(carrier_id)
+        if carrier is None:
+            raise TitledException(
+                title='Invalid carrier ID',
+                message='Provided carrier ID does not match any of the available '
+                        'carriers.',
+                status_code=404)
+        carrier = carrier(code)
 
-    # Check if it has been previously cached.
+    # Is this a bespoke tracking request?
     conn = connect_db()
-    cur = conn.cursor()
-    cur.execute('SELECT parcels.*, history_cache.*, '
-                ' user_parcels.name, user_parcels.archived, '
-                ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
-                'FROM history_cache '
-                'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
-                'LEFT JOIN user_parcels '
-                ' ON (history_cache.parcel_id = user_parcels.parcel_id)'
-                ' AND (user_parcels.user_id = ?)'
-                'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?) '
-                ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
-                'ORDER BY history_cache.retrieved DESC LIMIT 1',
-                (user_id(), carrier_id, code, carrier.outdated_period_secs))
-    row = cur.fetchone()
-    cur.close()
+    if carrier.db_id is None:
+        # Check if it has been previously tracked and isn't outdated.
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT id FROM parcels WHERE (carrier = ?) '
+            ' AND (tracking_code = ?) '
+            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?) '
+            'ORDER BY created DESC LIMIT 1',
+            (carrier_id, code, carrier.outdated_period_secs))
+        row = cur.fetchone()
+        cur.close()
 
-    # Get the parcel ID if we even have one.
-    if row is not None:
-        timeout = app.config['CACHE_REFRESH_TIMEOUT']
-        archived = row[-2]
-        parcel_name = row[-3]
+        if row is not None:
+            carrier.db_id = row[0]
 
-        # Ensure that only the superuser can issue a force from the outside.
-        if not force and user_id() == 1:
-            force = request.args.get('force', default=force, type=bool)
+        # Check if it has been previously cached.
+        cur = conn.cursor()
+        cond = '(parcels.id = ?) '
+        cond_values = (carrier.db_id,)
+        if carrier.db_id is None:
+            cond = '(parcels.carrier = ?) AND (parcels.tracking_code = ?) '
+            cond_values = (carrier_id, code)
+        cur.execute('SELECT parcels.*, history_cache.*, '
+                    ' user_parcels.name, user_parcels.archived, '
+                    ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+                    'FROM history_cache '
+                    'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
+                    'LEFT JOIN user_parcels '
+                    ' ON (history_cache.parcel_id = user_parcels.parcel_id) '
+                    ' AND (user_parcels.user_id = ?) '
+                    f'WHERE {cond} '
+                    ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
+                    'ORDER BY history_cache.retrieved DESC LIMIT 1',
+                    (user_id(),) + cond_values + (carrier.outdated_period_secs,))
+        row = cur.fetchone()
+        cur.close()
 
-        # Check if we should return the cached value.
-        if not force and (abs(row[-1]) <= timeout or archived):
-            carrier.from_cache(row[0], json.loads(row[7]),
-                               datetime.datetime.fromisoformat(row[3]),
-                               datetime.datetime.fromisoformat(row[6]),
-                               parcel_name=parcel_name)
-            return carrier.get_resp_dict()
+        # Get the parcel ID if we even have one.
+        if row is not None:
+            carrier.archived = row[-2]
+            carrier.parcel_name = row[-3]
 
-        carrier.db_id = row[0]
+            # Ensure that only the superuser can issue a force from the outside.
+            if not force and user_id() == 1:
+                force = request.args.get('force', default=force, type=bool)
+
+            # Check if we should return the cached value.
+            if not should_refresh_parcel(carrier, row[-1], force=force):
+                carrier.from_cache(
+                    db_id=row[0],
+                    cache=json.loads(row[7]),
+                    created=datetime.datetime.fromisoformat(row[3]),
+                    last_updated=datetime.datetime.fromisoformat(row[6]),
+                    parcel_name=carrier.parcel_name,
+                    archived=carrier.archived)
+                return carrier.get_resp_dict()
+
+            # Store the parcel ID.
+            carrier.db_id = row[0]
 
     # Fetch tracking history.
     try:
@@ -279,8 +314,9 @@ def track(carrier_id: str, code: str, force: bool = False):
         # Is this the first time that we are caching this parcel?
         if carrier.db_id is None:
             # First time we are caching this parcel.
-            cur.execute('INSERT OR IGNORE INTO parcels (carrier, tracking_code, created)'
-                        ' VALUES (?, ?, ?)', (carrier_id, code, now.isoformat()))
+            cur.execute('INSERT OR IGNORE INTO parcels '
+                        '(carrier, tracking_code, created) VALUES (?, ?, ?)',
+                        (carrier_id, code, now.isoformat()))
             conn.commit()
             carrier.db_id = cur.lastrowid
 
@@ -296,6 +332,55 @@ def track(carrier_id: str, code: str, force: bool = False):
     except DrissionPage.errors.BaseError as e:
         # Probably an error with our scraping stuff.
         raise ScrapingBrowserError(e, carrier_id, code)
+
+
+@app.route('/track/<parcel_id>')
+def track_id(parcel_id: int, force: bool = False):
+    """Tracks the history of a parcel given a parcel ID."""
+    # Check if we are authorized.
+    http_authenticate('auth_token')
+
+    # Check if it has been previously cached.
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute(
+        'SELECT user_parcels.name, user_parcels.archived, parcels.*, '
+        ' history_cache.retrieved, history_cache.data, '
+        ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+        'FROM history_cache '
+        'LEFT JOIN user_parcels '
+        ' ON user_parcels.parcel_id = history_cache.parcel_id '
+        'LEFT JOIN parcels ON parcels.id = history_cache.parcel_id '
+        'WHERE (user_parcels.user_id = ?) AND (user_parcels.parcel_id = ?) '
+        'ORDER BY history_cache.retrieved DESC LIMIT 1',
+        (user_id(), parcel_id))
+    row = cur.fetchone()
+    cur.close()
+    if row is None:
+        raise TitledException(
+            title='Invalid parcel ID',
+            message='The provided parcel ID does not match with any saved '
+                    'parcels for this user.',
+            status_code=404)
+
+    # Gather some basic information about the parcel.
+    carrier = carriers.from_id(row[3])(row[4])
+    carrier.from_cache(
+        db_id=row[2],
+        cache=json.loads(row[7]),
+        created=datetime.datetime.fromisoformat(row[5]),
+        last_updated=datetime.datetime.fromisoformat(row[6]),
+        parcel_name=row[0],
+        archived=row[1])
+
+    # Check if it's outdated or archived and always serve a cached version.
+    if (carrier.is_outdated()
+            or not should_refresh_parcel(carrier, row[-1], force=force)):
+        return carrier.get_resp_dict()
+
+    # Fetch some fresh (or cached) information about this parcel.
+    return track(carrier.uid, carrier.tracking_code, force=force,
+                 carrier=carrier)
 
 
 @app.route('/register', methods=['POST'])
@@ -551,9 +636,9 @@ def save_parcel_id(parcel_id: int, name: str = None,
     # Store the saved parcel information in the database.
     name = name.strip()
     cur = conn.cursor()
-    cur.execute('INSERT INTO user_parcels (name, archived, user_id, parcel_id) '
-                'VALUES (?, ?, ?, ?)',
-                (name, archived, user_id(), parcel_id))
+    cur.execute(
+        'INSERT INTO user_parcels (name, archived, user_id, parcel_id) '
+        'VALUES (?, ?, ?, ?)', (name, archived, user_id(), parcel_id))
     conn.commit()
     cur.close()
 
