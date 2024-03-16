@@ -552,10 +552,10 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
     # Get the parcel ID.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT parcels.id, user_parcels.name FROM parcels '
-                'LEFT JOIN user_parcels '
-                'ON (parcels.id = user_parcels.parcel_id) '
-                'AND (user_parcels.user_id = ?) '
+    cur.execute('SELECT parcels.id, parcels.slug, user_parcels.name '
+                'FROM parcels LEFT JOIN user_parcels '
+                ' ON (parcels.id = user_parcels.parcel_id) '
+                '  AND (user_parcels.user_id = ?) '
                 'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?)',
                 (user_id(), carrier_id, code))
     row = cur.fetchone()
@@ -570,12 +570,12 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
             status_code=422)
 
     # Delegate the operation.
-    return save_parcel_id(row[0], row[1], archived, skip_id_check=True)
+    return save_parcel_id(row[1], row[2], archived, parcel_id=int(row[0]))
 
 
-@app.route('/save/<parcel_id>', methods=['POST', 'DELETE'])
-def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
-                   skip_id_check: bool = False):
+@app.route('/save/<parcel_slug>', methods=['POST', 'DELETE'])
+def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
+                   parcel_id: int = None):
     """Stores a parcel into the user's tracked parcels list."""
     if name is None:
         name = request.form.get('name') or None
@@ -586,9 +586,11 @@ def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
     # Check if the parcel is already in the user's list.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT name FROM user_parcels '
-                'WHERE (parcel_id = ?) AND (user_id = ?)',
-                (parcel_id, user_id()))
+    cur.execute(
+        'SELECT parcels.id, user_parcels.name FROM parcels '
+        'INNER JOIN user_parcels ON user_parcels.parcel_id = parcels.id '
+        'WHERE (parcels.slug = ?) AND (user_parcels.user_id = ?)',
+        (parcel_slug, user_id()))
     row = cur.fetchone()
     if row is not None:
         if request.method == 'POST':
@@ -597,7 +599,8 @@ def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
                 message='The parcel is already in the user\'s list.',
                 status_code=422)
         elif request.method == 'DELETE':
-            name = row[0]
+            parcel_id = int(row[0])
+            name = row[1]
     elif row is None and request.method == 'DELETE':
         raise TitledException(
             title='Saved parcel does not exist',
@@ -627,10 +630,10 @@ def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
             message='Please supply a parcel name to be stored.',
             status_code=400)
 
-    # Check if the parcel ID actually exists in the system.
-    if not skip_id_check:
+    # Check if the parcel actually exists in the system.
+    if parcel_id is None:
         cur = conn.cursor()
-        cur.execute('SELECT id FROM parcels WHERE id = ?', (parcel_id,))
+        cur.execute('SELECT id FROM parcels WHERE slug = ?', (parcel_slug,))
         row = cur.fetchone()
         if row is None:
             raise TitledException(
@@ -639,6 +642,7 @@ def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
                         'for its first time before attempting to save it.',
                 status_code=422)
         cur.close()
+        parcel_id = int(row[0])
 
     # Store the saved parcel information in the database.
     name = name.strip()
@@ -656,8 +660,8 @@ def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
     }
 
 
-@app.route('/archive/<parcel_id>', methods=['POST', 'DELETE'])
-def archive_flag_parcel(parcel_id: int):
+@app.route('/archive/<parcel_slug>', methods=['POST', 'DELETE'])
+def archive_flag_parcel(parcel_slug: str):
     """Marks a saved parcel as archived or not."""
     # Check if we are authorized.
     http_authenticate('auth_token')
@@ -665,9 +669,12 @@ def archive_flag_parcel(parcel_id: int):
     # Get the saved parcel.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT parcel_id, name, archived FROM user_parcels '
-                'WHERE (user_id = ?) AND (parcel_id = ?)',
-                (user_id(), parcel_id))
+    cur.execute(
+        'SELECT parcels.id, user_parcels.name, user_parcels.archived '
+        'FROM parcels '
+        'INNER JOIN user_parcels ON user_parcels.parcel_id = parcels.id '
+        'WHERE (parcels.slug = ?) AND (user_parcels.user_id = ?)',
+        (parcel_slug, user_id()))
     row = cur.fetchone()
     cur.close()
 
@@ -677,16 +684,20 @@ def archive_flag_parcel(parcel_id: int):
             title='Parcel does not exist',
             message='In order to archive a parcel it must be saved first.',
             status_code=422)
-    elif request.method == 'POST' and row[2]:
+    elif request.method == 'POST' and bool(row[2]):
         raise TitledException(
             title='Parcel already archived',
             message='The parcel has already been marked as archived.',
             status_code=422)
-    elif request.method == 'DELETE' and not row[2]:
+    elif request.method == 'DELETE' and not bool(row[2]):
         raise TitledException(
             title='Parcel not yet archived',
             message='The parcel has not been marked as archived previously.',
             status_code=422)
+
+    # Save some variables.
+    parcel_id = int(row[0])
+    name = row[1]
 
     # Toggle the parcel's archived flag.
     cur = conn.cursor()
@@ -700,12 +711,12 @@ def archive_flag_parcel(parcel_id: int):
     if request.method == 'POST':
         return {
             'title': 'Parcel archived',
-            'message': f'{row[1]} has been archived successfully.'
+            'message': f'{name} has been archived successfully.'
         }
     else:
         return {
-            'title': 'Parcel no longer archived',
-            'message': f'{row[1]} has been unarchived successfully.'
+            'title': 'Parcel unarchived',
+            'message': f'{name} has been unarchived successfully.'
         }
 
 

@@ -48,9 +48,9 @@ X-Auth-Token: {{username}}:{{auth_token}}
 name = {{parcel_name}}
 
 
-### SavePackageByID
+### SavePackageBySlug
 # Saves a tracked package to the user's list using its ID.
-POST http://{{host}}/save/{{parcel_id}}
+POST http://{{host}}/save/{{parcel_slug}}
 Content-Type: application/x-www-form-urlencoded
 X-Auth-Token: {{username}}:{{auth_token}}
 
@@ -63,21 +63,21 @@ DELETE http://{{host}}/save/{{carrier_id}}/{{tracking_code}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
-### SavePackageUndoByID
-# Removes a tracked package from the user's list using its ID.
-DELETE http://{{host}}/save/{{parcel_id}}
+### SavePackageUndoBySlug
+# Removes a tracked package from the user's list using its slug.
+DELETE http://{{host}}/save/{{parcel_slug}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
 ### ArchivePackage
 # Flags a user's parcel as archived.
-POST http://{{host}}/archive/{{parcel_id}}
+POST http://{{host}}/archive/{{parcel_slug}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
-### MarkNotDelivered
+### UnarchivePackage
 # Flags a user's parcel as not archived.
-DELETE http://{{host}}/archive/{{parcel_id}}
+DELETE http://{{host}}/archive/{{parcel_slug}}
 X-Auth-Token: {{username}}:{{auth_token}}
 
 
