@@ -152,6 +152,11 @@ def authenticate(username: str, password: str = None,
 
 def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     """Authentication workflow for an HTTP request."""
+    # Check if we have cached the user ID.
+    if 'user_id' in g:
+        return g.user_id
+
+    # Ensure we build a tuple if a single string was passed for secrets.
     if type(use_secrets) is str:
         use_secrets = (use_secrets,)
 
