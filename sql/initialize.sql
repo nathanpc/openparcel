@@ -31,12 +31,15 @@ CREATE TABLE IF NOT EXISTS parcels(
 	id              INTEGER     PRIMARY KEY AUTOINCREMENT,
 	carrier         TEXT        NOT NULL,
 	tracking_code   TEXT        NOT NULL,
+    slug            TEXT        NOT NULL,
 	created         TIMESTAMP   NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_parcels_carrier
 	ON parcels(carrier);
 CREATE INDEX IF NOT EXISTS idx_parcels_tracking_code
 	ON parcels(tracking_code);
+CREATE INDEX IF NOT EXISTS idx_parcels_slug
+	ON parcels(slug);
 
 -- Relationship table for a user's tracked parcels.
 CREATE TABLE IF NOT EXISTS user_parcels(

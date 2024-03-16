@@ -263,7 +263,7 @@ def track(carrier_id: str, code: str, force: bool = False,
         cur.close()
 
         if row is not None:
-            carrier.db_id = row[0]
+            carrier.set_parcel_id(row[0])
 
         # Check if it has been previously cached.
         cur = conn.cursor()
@@ -273,8 +273,9 @@ def track(carrier_id: str, code: str, force: bool = False,
             cond = '(parcels.carrier = ?) AND (parcels.tracking_code = ?) '
             cond_values = (carrier_id, code)
         cur.execute(
-            'SELECT parcels.*, history_cache.*, '
-            ' user_parcels.name, user_parcels.archived, '
+            'SELECT parcels.id, parcels.carrier, parcels.tracking_code, '
+            ' parcels.slug, parcels.created, history_cache.retrieved, '
+            ' history_cache.data, user_parcels.name, user_parcels.archived, '
             ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
             'FROM history_cache '
             'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
@@ -301,15 +302,16 @@ def track(carrier_id: str, code: str, force: bool = False,
             if not should_refresh_parcel(carrier, row[-1], force=force):
                 carrier.from_cache(
                     db_id=row[0],
-                    cache=json.loads(row[7]),
-                    created=datetime.datetime.fromisoformat(row[3]),
-                    last_updated=datetime.datetime.fromisoformat(row[6]),
+                    cache=json.loads(row[6]),
+                    slug=row[3],
+                    created=datetime.datetime.fromisoformat(row[4]),
+                    last_updated=datetime.datetime.fromisoformat(row[5]),
                     parcel_name=carrier.parcel_name,
                     archived=carrier.archived)
                 return carrier.get_resp_dict()
 
             # Store the parcel ID.
-            carrier.db_id = row[0]
+            carrier.set_parcel_id(row[0])
 
     # Fetch tracking history.
     try:
@@ -321,11 +323,13 @@ def track(carrier_id: str, code: str, force: bool = False,
         # Is this the first time that we are caching this parcel?
         if carrier.db_id is None:
             # First time we are caching this parcel.
-            cur.execute('INSERT OR IGNORE INTO parcels '
-                        '(carrier, tracking_code, created) VALUES (?, ?, ?)',
-                        (carrier_id, code, now.isoformat()))
+            cur.execute(
+                'INSERT OR IGNORE INTO parcels '
+                ' (carrier, tracking_code, created, slug) '
+                'VALUES (?, ?, ?, ?)',
+                (carrier_id, code, now.isoformat(), carrier.generate_slug()))
             conn.commit()
-            carrier.db_id = cur.lastrowid
+            carrier.set_parcel_id(cur.lastrowid)
 
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
@@ -351,8 +355,9 @@ def track_id(parcel_id: int, force: bool = False):
     conn = connect_db()
     cur = conn.cursor()
     cur.execute(
-        'SELECT user_parcels.name, user_parcels.archived, parcels.*, '
-        ' history_cache.retrieved, history_cache.data, '
+        'SELECT user_parcels.name, user_parcels.archived, parcels.id, '
+        ' parcels.carrier, parcels.tracking_code, parcels.slug, '
+        ' parcels.created, history_cache.retrieved, history_cache.data, '
         ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
         'FROM history_cache '
         'LEFT JOIN user_parcels '
@@ -374,9 +379,10 @@ def track_id(parcel_id: int, force: bool = False):
     carrier = carriers.from_id(row[3])(row[4])
     carrier.from_cache(
         db_id=row[2],
-        cache=json.loads(row[7]),
-        created=datetime.datetime.fromisoformat(row[5]),
-        last_updated=datetime.datetime.fromisoformat(row[6]),
+        cache=json.loads(row[-2]),
+        slug=row[5],
+        created=datetime.datetime.fromisoformat(row[6]),
+        last_updated=datetime.datetime.fromisoformat(row[7]),
         parcel_name=row[0],
         archived=row[1])
 
@@ -716,23 +722,29 @@ def list_parcels():
     # Get the list from the database.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT DISTINCT * FROM '
-                '(SELECT user_parcels.name, parcels.carrier,'
-                ' parcels.tracking_code, parcels.created, history_cache.* '
-                'FROM user_parcels '
-                'LEFT JOIN parcels ON parcels.id = user_parcels.parcel_id '
-                'LEFT JOIN history_cache '
-                ' ON history_cache.parcel_id = user_parcels.parcel_id '
-                'WHERE user_parcels.user_id = ? '
-                'ORDER BY history_cache.retrieved DESC) AS sq '
-                'GROUP BY sq.parcel_id', (user_id(),))
+    cur.execute(
+        'SELECT DISTINCT * FROM '
+        ' (SELECT user_parcels.name, user_parcels.archived, parcels.id, '
+        '   parcels.carrier, parcels.tracking_code, parcels.slug, '
+        '   parcels.created, history_cache.retrieved, history_cache.data '
+        '  FROM user_parcels '
+        '  LEFT JOIN parcels ON parcels.id = user_parcels.parcel_id '
+        '  LEFT JOIN history_cache '
+        '   ON history_cache.parcel_id = user_parcels.parcel_id '
+        '  WHERE user_parcels.user_id = ? '
+        '  ORDER BY history_cache.retrieved DESC) AS sq '
+        'GROUP BY sq.id', (user_id(),))
     for row in cur.fetchall():
         # Build up the tracked object.
-        carrier = carriers.from_id(row[1])(row[2])
-        carrier.from_cache(row[5], json.loads(row[7]),
-                           datetime.datetime.fromisoformat(row[3]),
-                           datetime.datetime.fromisoformat(row[6]),
-                           parcel_name=row[0])
+        carrier = carriers.from_id(row[3])(row[2])
+        carrier.from_cache(
+            db_id=row[2],
+            cache=json.loads(row[8]),
+            slug=row[5],
+            created=datetime.datetime.fromisoformat(row[6]),
+            last_updated=datetime.datetime.fromisoformat(row[7]),
+            parcel_name=row[0],
+            archived=row[1])
 
         # Append the object to the list.
         resp['parcels'].append(carrier.get_resp_dict())

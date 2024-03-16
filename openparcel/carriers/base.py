@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import datetime
+import random
+import re
+import secrets
 
 from os.path import abspath, dirname, exists
 from string import Template
@@ -28,6 +31,7 @@ class BaseCarrier:
         self.created: datetime.datetime = datetime.datetime.now(datetime.UTC)
         self.last_updated: datetime.datetime = self.created
         self.db_id: Optional[int] = None
+        self.slug: Optional[str] = None
         self.parcel_name: Optional[str] = None
         self.archived: bool = False
         self._resp_dict: Optional[dict] = None
@@ -43,6 +47,10 @@ class BaseCarrier:
             'tracking_code': self.tracking_code
         })
 
+    def set_parcel_id(self, parcel_id: [int | str]):
+        """Sets the value of the database parcel ID of the object."""
+        self.db_id = int(parcel_id)
+
     def fetch(self) -> dict:
         """Fetches tracking updates from the carrier's tracking website."""
         raise NotImplementedError
@@ -53,16 +61,34 @@ class BaseCarrier:
                 datetime.timedelta(seconds=self.outdated_period_secs))
 
     def from_cache(self, db_id: int, cache: dict, created: datetime.datetime,
-                   last_updated: datetime.datetime, parcel_name: str = None,
-                   archived: bool = False):
+                   last_updated: datetime.datetime, slug: str,
+                   parcel_name: str = None, archived: bool = False):
         """Populates the object with data from a cached object."""
         self._resp_dict = cache
-        self.db_id = db_id
+        self.set_parcel_id(db_id)
+        self.slug = slug
         self.parcel_name = parcel_name
         self.archived = archived
         self.cached = True
         self.created = created
         self.last_updated = last_updated
+
+    def generate_slug(self, force: bool = False) -> str:
+        """Generates a unique slug using the available information."""
+        # Is the generation part even required?
+        if not force and self.slug is not None:
+            return self.slug
+
+        # Build the base of the slug.
+        clean = re.compile(r'[^A-Za-z0-9]+')
+        self.slug = (clean.sub('', self.uid)[:5] + '-' +
+                     clean.sub('', self.tracking_code)[:8].lower())
+
+        # Generate the random bit of the slug.
+        rand = secrets.token_bytes(random.randint(2, 3))
+        self.slug += '-' + rand.hex()
+
+        return self.slug
 
     def get_resp_dict(self, extra: dict = None) -> dict:
         """Creates the response dictionary with all the information gathered
@@ -70,7 +96,7 @@ class BaseCarrier:
         resp = self._resp_dict
 
         # Add additional information to object.
-        resp['id'] = self.db_id
+        resp['id'] = self.slug
         resp['name'] = self.parcel_name
         resp['cached'] = self.cached
         resp['archived'] = self.archived
