@@ -1,4 +1,5 @@
 # Private files.
+sql/playground.sql
 *.db
 
 # Byte-compiled / optimized / DLL files
