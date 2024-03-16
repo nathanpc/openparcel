@@ -532,12 +532,8 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
 
 
 @app.route('/save/<carrier_id>/<code>', methods=['POST', 'DELETE'])
-def save_parcel(carrier_id: str, code: str, name: str = None,
-                delivered: bool = False):
+def save_parcel(carrier_id: str, code: str, archived: bool = False):
     """Stores a parcel into the user's tracked parcels list."""
-    name = request.form.get('name') if name is None else None
-    # TODO: Fix this implementation. Name is currently ignored.
-
     # Check if we are authorized.
     http_authenticate('auth_token')
 
@@ -562,14 +558,12 @@ def save_parcel(carrier_id: str, code: str, name: str = None,
             status_code=422)
 
     # Delegate the operation.
-    parcel_id = row[0]
-    name = row[1]
-    return save_parcel_id(parcel_id, name, delivered, skip_id_check=True)
+    return save_parcel_id(row[0], row[1], archived, skip_id_check=True)
 
 
 @app.route('/save/<parcel_id>', methods=['POST', 'DELETE'])
-def save_parcel_id(parcel_id: int, name: str = None,
-                   archived: bool = False, skip_id_check: bool = False):
+def save_parcel_id(parcel_id: int, name: str = None, archived: bool = False,
+                   skip_id_check: bool = False):
     """Stores a parcel into the user's tracked parcels list."""
     if name is None:
         name = request.form.get('name') or None
@@ -682,7 +676,7 @@ def archive_flag_parcel(parcel_id: int):
             message='The parcel has not been marked as archived previously.',
             status_code=422)
 
-    # Toggle the parcel's delivered flag.
+    # Toggle the parcel's archived flag.
     cur = conn.cursor()
     cur.execute('UPDATE user_parcels SET archived = ? '
                 'WHERE (user_id = ?) AND (parcel_id = ?)',
