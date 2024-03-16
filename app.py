@@ -345,8 +345,8 @@ def track(carrier_id: str, code: str, force: bool = False,
         raise ScrapingBrowserError(e, carrier_id, code)
 
 
-@app.route('/track/<parcel_id>')
-def track_id(parcel_id: int, force: bool = False):
+@app.route('/track/<parcel_slug>')
+def track_id(parcel_slug: str, force: bool = False):
     """Tracks the history of a parcel given a parcel ID."""
     # Check if we are authorized.
     http_authenticate('auth_token')
@@ -363,15 +363,15 @@ def track_id(parcel_id: int, force: bool = False):
         'LEFT JOIN user_parcels '
         ' ON user_parcels.parcel_id = history_cache.parcel_id '
         'LEFT JOIN parcels ON parcels.id = history_cache.parcel_id '
-        'WHERE (user_parcels.user_id = ?) AND (user_parcels.parcel_id = ?) '
+        'WHERE (user_parcels.user_id = ?) AND (parcels.slug = ?) '
         'ORDER BY history_cache.retrieved DESC LIMIT 1',
-        (user_id(), parcel_id))
+        (user_id(), parcel_slug))
     row = cur.fetchone()
     cur.close()
     if row is None:
         raise TitledException(
-            title='Invalid parcel ID',
-            message='The provided parcel ID does not match with any saved '
+            title='Invalid parcel',
+            message='The provided parcel slug does not match with any saved '
                     'parcels for this user.',
             status_code=404)
 
