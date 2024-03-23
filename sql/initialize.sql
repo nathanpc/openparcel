@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_parcels_carrier
 	ON parcels(carrier);
 CREATE INDEX IF NOT EXISTS idx_parcels_tracking_code
 	ON parcels(tracking_code);
-CREATE INDEX IF NOT EXISTS idx_parcels_slug
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parcels_slug
 	ON parcels(slug);
 
 -- Relationship table for a user's tracked parcels.
@@ -69,3 +69,18 @@ CREATE TABLE IF NOT EXISTS history_cache(
 		ON UPDATE CASCADE
 		ON DELETE CASCADE
 );
+
+-- Proxy list.
+CREATE TABLE IF NOT EXISTS proxies(
+    id          INTEGER         PRIMARY KEY AUTOINCREMENT,
+    addr        VARCHAR(15)     NOT NULL,
+    port        INTEGER         NOT NULL,
+    country     VARCHAR(2)      NOT NULL,
+    speed       INTEGER         NOT NULL,
+    protocol    VARCHAR(6)      NOT NULL,
+    active      BOOLEAN         NOT NULL    DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_proxies_country
+	ON proxies(country);
+CREATE INDEX IF NOT EXISTS idx_proxies_speed
+	ON proxies(speed);
