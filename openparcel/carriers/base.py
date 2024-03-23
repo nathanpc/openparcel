@@ -127,7 +127,15 @@ class BrowserBaseCarrier(BaseCarrier):
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)
+        self.proxy: Optional[str] = None
         self.page: Optional[ChromiumPage] = None
+
+    def set_proxy(self, proxy: str):
+        """Sets the proxy server for the scraping browser."""
+        if self.page is not None:
+            raise RuntimeError('Cannot set the proxy of a running browser')
+
+        self.proxy = proxy
 
     def _scrape(self, func_name: str = 'scrape'):
         # Get the scraped response.
@@ -152,8 +160,13 @@ class BrowserBaseCarrier(BaseCarrier):
         if self.page is None:
             opts = ChromiumOptions()
             opts.auto_port()
-            opts.set_argument('--ignore-certificate-errors')
+            opts.incognito()
+            opts.ignore_certificate_errors()
+            opts.set_timeouts(page_load=10)
+            opts.set_retry(3)
             opts.set_argument('--disable-web-security')
+            if self.proxy is not None:
+                opts.set_proxy(self.proxy)
 
             self.page = ChromiumPage(addr_or_opts=opts)
 
