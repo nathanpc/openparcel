@@ -6,11 +6,12 @@ import string
 import random
 import time
 
+from operator import itemgetter
+from os.path import abspath, dirname
+
 import requests
 import yaml
 import DrissionPage.errors
-
-from os.path import abspath, dirname
 
 from openparcel.carriers import carriers
 from openparcel.exceptions import ScrapingReturnedError
@@ -173,29 +174,30 @@ class PubProxy(ProxyList):
 
     def __init__(self, api_key: str = None, country_denylist: list = None,
                  conn: sqlite3.Connection = None):
-        # Build up the request URL.
-        url = 'http://pubproxy.com/api/proxy?format=json'
-        if api_key is not None:
-            url += '&api=' + api_key
-        url += '&type=http,socks4,socks5'
-        url += '&last_check=30'
-        url += '&speed=10'
-        url += f'&limit={5 if api_key is None else 20}'
-        if country_denylist is not None:
-            url += '&not_country=' + ','.join(country_denylist)
-        url += '&https=true'
-        url += '&post=true'
-        url += '&user_agent=true'
-        url += '&cookies=true'
-        url += '&referer=true'
+        super().__init__('http://pubproxy.com/api/proxy?format=json',
+                         conn=conn, api_key=api_key)
 
-        # Initialize the parent class.
-        super().__init__(url, conn=conn, api_key=api_key)
+        # Build up the request URL.
+        if self.api_key is not None:
+            self.url += '&api=' + self.api_key
+        self.url += '&last_check=30'
+        self.url += '&speed=10'
+        self.url += f'&limit={5 if self.api_key is None else 20}'
+        if country_denylist is not None:
+            self.url += '&not_country=' + ','.join(country_denylist)
+        self.url += '&https=true'
+        self.url += '&post=true'
+        self.url += '&user_agent=true'
+        self.url += '&cookies=true'
+        self.url += '&referer=true'
+        self.common_url = self.url
 
     def load(self, num: int = 1) -> list[Proxy]:
         # Load the list multiple times in order to get a good selection.
         for _ in range(num):
-            super().load()
+            for protocol in ('http', 'socks4', 'socks5'):
+                self.url = f'{self.common_url}&type={protocol}'
+                super().load()
 
         return self.list
 
@@ -255,6 +257,73 @@ class Proxifly(ProxyList):
                 conn=self.conn))
 
 
+class OpenProxySpace(ProxyList):
+    """Proxy list using Open Proxy Space as the backend."""
+
+    def __init__(self, api_key: str = None, quantity: int = 5,
+                 conn: sqlite3.Connection = None):
+        super().__init__('https://api.openproxy.space/premium/json',
+                         conn=conn, api_key=api_key)
+
+        # Build up the request URL.
+        self.url += (f'?apiKey={self.api_key}&amount={quantity}&smart=1'
+                     '&stableAverage=0&status=1&uptime=99')
+
+    @staticmethod
+    def proto_from_index(index: int) -> str:
+        """Gets the appropriate protocol name from a protocol index."""
+        match index:
+            case 1:
+                return 'http'
+            case 2:
+                return 'socks4'
+            case 3:
+                return 'socks5'
+
+        raise ValueError(f'Invalid protocol index: {index}')
+
+    def _parse_response(self, response: requests.Response):
+        resp_json = response.json()
+        for item in resp_json:
+            for proto_index in item['protocols']:
+                self.append(Proxy(
+                    addr=item['ip'],
+                    port=int(item['port']),
+                    country=item['country'],
+                    speed=int(item['timeout']),
+                    protocol=self.proto_from_index(proto_index),
+                    conn=self.conn))
+
+
+class ProxyScrapeFree(ProxyList):
+    """Proxy list using ProxyScrape freebies list as the backend."""
+
+    def __init__(self, timeout: int = 8000, conn: sqlite3.Connection = None):
+        url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
+               f'request=displayproxies&protocol=all&timeout={timeout}'
+               '&proxy_format=protocolipport&format=json')
+        super().__init__(url, conn=conn)
+
+    def _parse_response(self, response: requests.Response):
+        # Sort the response list by timeout.
+        resp_json = response.json()
+        proxy_list = sorted(resp_json['proxies'],
+                            key=itemgetter('average_timeout'))
+
+        for item in proxy_list:
+            # Ignore dead proxies.
+            if not item['alive'] or not item['ssl']:
+                continue
+
+            self.append(Proxy(
+                addr=item['ip'],
+                port=int(item['port']),
+                country=item['ip_data']['countryCode'],
+                speed=round(item['average_timeout']),
+                protocol=item['protocol'],
+                conn=self.conn))
+
+
 if __name__ == '__main__':
     # Connect to the database.
     db = sqlite3.connect(dirname(dirname(abspath(__file__))) + '/' +
@@ -262,7 +331,7 @@ if __name__ == '__main__':
     db.execute('PRAGMA foreign_keys = ON')
 
     # Get a new proxy list.
-    proxies = Proxifly(conn=db)
+    proxies = ProxyScrapeFree(conn=db)
     proxies.load()
 
     # Save all the fetched proxies into the database.
