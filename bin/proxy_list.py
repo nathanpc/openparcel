@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import sqlite3
 import string
 import random
@@ -210,6 +211,48 @@ class PubProxy(ProxyList):
                 conn=self.conn))
 
 
+class Proxifly(ProxyList):
+    """Proxy list using Proxifly as the backend."""
+
+    def __init__(self, api_key: str = None, quantity: int = 5,
+                 conn: sqlite3.Connection = None):
+        # Initialize the parent class.
+        super().__init__('https://api.proxifly.dev/get-proxy', conn=conn,
+                         api_key=api_key)
+
+        # Set up the request parameters.
+        self.options = {
+            'format': 'json',
+            'protocol': ['http', 'socks4', 'socks5'],
+            'quantity': quantity,
+            'https': True,
+            'speed': 10000
+        }
+
+        # Append the API key if we have one.
+        if self.api_key is not None:
+            self.options['apiKey'] = self.api_key
+
+    def _fetch(self) -> requests.Response:
+        req = requests.post(self.url, data=json.dumps(self.options),
+                            headers={'Content-Type': 'application/json'})
+        if req.status_code != 200:
+            raise requests.exceptions.HTTPError(
+                'Proxifly request failed with HTTP status code ' +
+                str(req.status_code))
+
+        return req
+
+    def _parse_response(self, response: requests.Response):
+        resp_json = response.json()
+        for item in resp_json:
+            self.append(Proxy(
+                addr=item['ip'],
+                port=int(item['port']),
+                country=item['geolocation']['country'],
+                speed=int(item['score']) * 1000,
+                protocol=item['protocol'],
+                conn=self.conn))
 
 
 if __name__ == '__main__':
@@ -219,7 +262,7 @@ if __name__ == '__main__':
     db.execute('PRAGMA foreign_keys = ON')
 
     # Get a new proxy list.
-    proxies = PubProxy(conn=db)
+    proxies = Proxifly(conn=db)
     proxies.load()
 
     # Save all the fetched proxies into the database.
