@@ -4,3 +4,5 @@ DEBUG: true
 DB_HOST: 'openparcel.db'
 CACHE_REFRESH_TIMEOUT: 1800
 ALLOW_REGISTRATION: true
+PUBPROXY_API_KEY: 'delete this line if not using PubProxy'
+PROXIFLY_API_KEY: 'delete this line if not using Proxifly'
