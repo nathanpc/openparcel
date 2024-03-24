@@ -112,10 +112,14 @@ class Proxy:
 class ProxyList:
     """Generic proxy list provider class."""
 
-    def __init__(self, url: str, conn: sqlite3.Connection = None):
+    def __init__(self, url: str, api_key: str = None,
+                 conn: sqlite3.Connection = None):
         self.url: str = url
         self.list: list[Proxy] = []
         self.conn: sqlite3.Connection = conn
+
+        # Import API key from configuration if needed.
+        self._import_api_key(self.__class__.__name__, api_key)
 
     def load(self) -> list[Proxy]:
         """Loads the proxy list from its source."""
@@ -134,6 +138,17 @@ class ProxyList:
     def _parse_response(self, response: requests.Response):
         """Parses the proxy list response from the backend."""
         raise NotImplementedError
+
+    def _import_api_key(self, service_name: str, default: str):
+        """Imports an API key from the configuration if one is available."""
+        config_key = f'{service_name.upper()}_API_KEY'
+
+        # Import the key from the configuration.
+        if default is None and config_key in config:
+            self.api_key = config[config_key]
+            return
+
+        self.api_key = default
 
 
 class PubProxy(ProxyList):
@@ -157,12 +172,8 @@ class PubProxy(ProxyList):
         url += '&cookies=true'
         url += '&referer=true'
 
-        super().__init__(url, conn=conn)
-        self.api_key: str = api_key
-
-        # Import API key from configuration.
-        if 'PUBPROXY_API_KEY' in config:
-            self.api_key = config['PUBPROXY_API_KEY']
+        # Initialize the parent class.
+        super().__init__(url, conn=conn, api_key=api_key)
 
     def load(self, num: int = 1) -> list[Proxy]:
         # Load the list multiple times in order to get a good selection.
