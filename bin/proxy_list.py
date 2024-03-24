@@ -126,12 +126,28 @@ class ProxyList:
         self._parse_response(self._fetch())
         return self.list
 
+    def append(self, server: Proxy) -> bool:
+        """Appends a proxy server to the list after performing some checks."""
+        # Check if we already have this proxy in our database.
+        if server.is_duplicate():
+            print(f'Duplicate proxy server {proxy.protocol}://{proxy.addr}:'
+                  f'{proxy.port} was ignored.')
+            return False
+
+        # Test the proxy out before appending it to the list.
+        if server.test():
+            self.list.append(server)
+            return True
+
+        return False
+
     def _fetch(self) -> requests.Response:
         """Fetches the proxy list from somewhere."""
         req = requests.get(self.url)
         if req.status_code != 200:
-            raise Exception('Proxy list backend API request failed with HTTP '
-                            f'status code: {req.status_code}')
+            raise requests.exceptions.HTTPError(
+                'Proxy list backend API request failed with HTTP status code ' +
+                str(req.status_code))
 
         return req
 
@@ -162,7 +178,7 @@ class PubProxy(ProxyList):
             url += '&api=' + api_key
         url += '&type=http,socks4,socks5'
         url += '&last_check=30'
-        url += '&speed=8'
+        url += '&speed=10'
         url += f'&limit={5 if api_key is None else 20}'
         if country_denylist is not None:
             url += '&not_country=' + ','.join(country_denylist)
@@ -183,26 +199,17 @@ class PubProxy(ProxyList):
         return self.list
 
     def _parse_response(self, response: requests.Response):
-        json = response.json()
-        for item in json['data']:
-            # Build up the proxy object.
-            server = Proxy(
+        resp_json = response.json()
+        for item in resp_json['data']:
+            self.append(Proxy(
                 addr=item['ip'],
                 port=int(item['port']),
                 country=item['country'],
                 speed=int(item['speed']) * 1000,
                 protocol=item['type'],
-                conn=self.conn)
+                conn=self.conn))
 
-            # Check if we already have this proxy in our database.
-            if server.is_duplicate():
-                print(f'Duplicate proxy server {proxy.protocol}://{proxy.addr}:'
-                      f'{proxy.port} was ignored.')
-                continue
 
-            # Test the proxy out before appending it to the list.
-            if server.test():
-                self.list.append(server)
 
 
 if __name__ == '__main__':
