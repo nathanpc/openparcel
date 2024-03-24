@@ -1,0 +1,30 @@
+### PubProxy
+# Unauthenticated access to PubProxy.
+GET http://pubproxy.com/api/proxy?format=json&type=http,socks4,socks5
+    &last_check=30&speed=10&limit=5&https=true&post=true&user_agent=true
+    &cookies=true&referer=true
+
+### Proxifly
+# Unauthenticated access to Proxifly.
+POST https://api.proxifly.dev/get-proxy
+Content-Type: application/json
+
+{
+  "format": "json",
+  "protocol": ["http", "socks4"],
+  "quantity": 3,
+  "https": true
+}
+
+### ProxiflyWithKey
+# Authenticated access to Proxifly.
+POST https://api.proxifly.dev/get-proxy
+Content-Type: application/json
+
+{
+  "apiKey": "{{proxifly_api_key}}",
+  "format": "json",
+  "protocol": ["http", "socks4", "socks5"],
+  "quantity": 3,
+  "https": true
+}
