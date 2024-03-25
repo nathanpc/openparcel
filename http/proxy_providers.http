@@ -42,3 +42,10 @@ GET https://api.openproxy.space/premium/json?apiKey={{ops_api_key}}
 # ProxyScrape's freebie list.
 GET https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies
     &protocol=all&timeout=8000&proxy_format=protocolipport&format=json
+
+
+### WebShare
+# Authenticated access to WebShare's proxy list.
+GET https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&valid=1
+    &page=1&page_size=25
+Authorization: Token {{webshare_api_key}}

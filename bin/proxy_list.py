@@ -8,6 +8,7 @@ import time
 
 from operator import itemgetter
 from os.path import abspath, dirname
+from typing import Mapping
 
 import requests
 import yaml
@@ -115,11 +116,13 @@ class ProxyList:
     """Generic proxy list provider class."""
 
     def __init__(self, url: str, api_key: str = None, auto_save: bool = True,
-                 conn: sqlite3.Connection = None):
+                 conn: sqlite3.Connection = None,
+                 headers: Mapping[str, str | bytes] = None):
         self.url: str = url
         self.list: list[Proxy] = []
         self.conn: sqlite3.Connection = conn
         self.auto_save: bool = auto_save
+        self.headers: Mapping[str, str | bytes] = headers
 
         # Import API key from configuration if needed.
         self._import_api_key(self.__class__.__name__, api_key)
@@ -148,7 +151,7 @@ class ProxyList:
 
     def _fetch(self) -> requests.Response:
         """Fetches the proxy list from somewhere."""
-        req = requests.get(self.url)
+        req = requests.get(self.url, headers=self.headers)
         if req.status_code != 200:
             raise requests.exceptions.HTTPError(
                 'Proxy list backend API request failed with HTTP status code ' +
@@ -223,7 +226,8 @@ class Proxifly(ProxyList):
                  auto_save: bool = True, conn: sqlite3.Connection = None):
         # Initialize the parent class.
         super().__init__('https://api.proxifly.dev/get-proxy', conn=conn,
-                         auto_save=auto_save, api_key=api_key)
+                         auto_save=auto_save, api_key=api_key,
+                         headers={'Content-Type': 'application/json'})
 
         # Set up the request parameters.
         self.options = {
@@ -240,7 +244,7 @@ class Proxifly(ProxyList):
 
     def _fetch(self) -> requests.Response:
         req = requests.post(self.url, data=json.dumps(self.options),
-                            headers={'Content-Type': 'application/json'})
+                            headers=self.headers)
         if req.status_code != 200:
             raise requests.exceptions.HTTPError(
                 'Proxifly request failed with HTTP status code ' +
@@ -328,6 +332,36 @@ class ProxyScrapeFree(ProxyList):
                 conn=self.conn))
 
 
+class WebShare(ProxyList):
+    """Proxy list using WebSahre as the backend."""
+
+    def __init__(self, api_key: str = None, quantity: int = 25,
+                 auto_save: bool = True, conn: sqlite3.Connection = None):
+        # Initialize the parent class.
+        super().__init__('https://proxy.webshare.io/api/v2/proxy/list/?'
+                         f'mode=direct&page=1&page_size={quantity}', conn=conn,
+                         auto_save=auto_save, api_key=api_key)
+        self.common_url = self.url
+
+        # Set up the authentication token in the headers.
+        self.headers = {'Authorization': f'Token {self.api_key}'}
+
+    def load(self, page: int = 1) -> list[Proxy]:
+        self.url = f'{self.common_url}&page={page}'
+        return super().load()
+
+    def _parse_response(self, response: requests.Response):
+        resp_json = response.json()
+        for item in resp_json['results']:
+            self.append(Proxy(
+                addr=item['proxy_address'],
+                port=int(item['port']),
+                country=item['country_code'],
+                speed=-1,
+                protocol='socks5',
+                conn=self.conn))
+
+
 if __name__ == '__main__':
     # Connect to the database.
     db = sqlite3.connect(dirname(dirname(abspath(__file__))) + '/' +
@@ -335,7 +369,7 @@ if __name__ == '__main__':
     db.execute('PRAGMA foreign_keys = ON')
 
     # Get a new proxy list and save automatically.
-    proxies = ProxyScrapeFree(auto_save=True, conn=db)
+    proxies = WebShare(auto_save=True, conn=db)
     proxies.load()
 
     # Ensure we close the database connection.
