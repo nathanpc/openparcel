@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS proxies(
     country     VARCHAR(2)      NOT NULL,
     speed       INTEGER         NOT NULL,
     protocol    VARCHAR(6)      NOT NULL,
-    active      BOOLEAN         NOT NULL    DEFAULT TRUE
+    active      BOOLEAN         NOT NULL    DEFAULT TRUE,
+    carriers    JSON            NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_proxies_country
 	ON proxies(country);

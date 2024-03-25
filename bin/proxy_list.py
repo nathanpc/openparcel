@@ -27,6 +27,7 @@ class Proxy:
 
     def __init__(self, addr: str, port: int, country: str, speed: int,
                  protocol: str, active: bool = True, db_id: int = None,
+                 valid_carriers: list[dict] = None,
                  conn: sqlite3.Connection = None):
         self.db_id: int = db_id
         self.addr: str = addr
@@ -35,12 +36,15 @@ class Proxy:
         self.speed: int = speed
         self.protocol: str = protocol.lower()
         self.active: bool = active
+        self.valid_carriers: list[dict] = valid_carriers
         self.conn: sqlite3.Connection = conn
+
+        # Ensure we always have an empty list of valid carriers.
+        if self.valid_carriers is None:
+            self.valid_carriers = []
 
     def test(self) -> bool:
         """Perform a cursory test of the proxy server."""
-        timing = []
-
         # Go through available carriers.
         for carrier in carriers():
             # Generate a random tracking code.
@@ -51,24 +55,53 @@ class Proxy:
 
             # Fetch the random tracking code to try the proxy out.
             try:
+                # Set up the carrier and proxy settings.
                 carrier = carrier(code)
                 carrier.set_proxy(self.as_str())
                 print(f'Testing proxy {self.as_str()} '
                       f'({round(self.speed / 1000)}) from {self.country} '
                       f'with {carrier.name}...', end=' ')
 
+                # Try to scrape the website.
                 start_time = time.time()
                 carrier.fetch()
-            except ScrapingReturnedError:
+
+                # By some miracle we've hit a valid tracking code!
                 speed = round((time.time() - start_time) * 1000)
-                timing.append(speed)
                 print(f'{speed} ms')
+                self.valid_carriers.append({
+                    'id': carrier.uid,
+                    'timing': speed
+                })
+            except ScrapingReturnedError as e:
+                # Check which kind of scraping error occurred.
+                match e.code:
+                    case 'RateLimiting' | 'Blocked':
+                        # Blocked by the carrier's anti-bot measures.
+                        print('BLOCKED')
+                        continue
+                    case 'ParcelNotFound' | 'InvalidTrackingCode':
+                        # Looks like it is a valid proxy!
+                        speed = round((time.time() - start_time) * 1000)
+                        print(f'{speed} ms')
+                        self.valid_carriers.append({
+                            'id': carrier.uid,
+                            'timing': speed
+                        })
+                        continue
+
+                # Something unexpected just happened.
+                print(f'Unknown scraping error: {e.code}')
             except DrissionPage.errors.BaseError:
                 print('FAILED')
-                return False
+
+        # Is this proxy completely dead?
+        if len(self.valid_carriers) == 0:
+            return False
 
         # Compute the average time it took to perform the requests.
-        self.speed = round(sum(timing) / len(timing))
+        self.speed = round(sum(it['timing'] for it in self.valid_carriers) /
+                           len(self.valid_carriers))
         print(f'Proxy {self.as_str()} has an average speed of {self.speed}',
               end='\n\n', flush=True)
 
@@ -99,10 +132,11 @@ class Proxy:
         # Insert the object into the database.
         cur = self.conn.cursor()
         cur.execute(
-            'INSERT INTO proxies (addr, port, country, speed, protocol, active)'
-            ' VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO proxies'
+            ' (addr, port, country, speed, protocol, active, carriers)'
+            ' VALUES (?, ?, ?, ?, ?, ?, ?)',
             (self.addr, self.port, self.country, self.speed, self.protocol,
-             self.active))
+             self.active, json.dumps(self.valid_carriers)))
         self.conn.commit()
         self.db_id = cur.lastrowid
         cur.close()
@@ -333,7 +367,7 @@ class ProxyScrapeFree(ProxyList):
 
 
 class WebShare(ProxyList):
-    """Proxy list using WebSahre as the backend."""
+    """Proxy list using WebShare as the backend."""
 
     def __init__(self, api_key: str = None, quantity: int = 25,
                  auto_save: bool = True, conn: sqlite3.Connection = None):
