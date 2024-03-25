@@ -129,6 +129,7 @@ class BrowserBaseCarrier(BaseCarrier):
         super().__init__(tracking_code)
         self.proxy: Optional[str] = None
         self.page: Optional[ChromiumPage] = None
+        self.base_timeout: float = 10
 
     def set_proxy(self, proxy: str):
         """Sets the proxy server for the scraping browser."""
@@ -162,7 +163,7 @@ class BrowserBaseCarrier(BaseCarrier):
             opts.auto_port()
             opts.incognito()
             opts.ignore_certificate_errors()
-            opts.set_timeouts(page_load=10)
+            opts.set_timeouts(page_load=self.base_timeout)
             opts.set_retry(3)
             opts.set_argument('--disable-web-security')
             if self.proxy is not None:
@@ -206,6 +207,7 @@ class BrowserBaseCarrier(BaseCarrier):
         loaded in via shitty frameworks such as React. This method will use some
         hacks to determine when a specific element (selected using a Javascript
         query string) has been loaded into the DOM."""
+        self._load_scraping_js()
         self.page.run_js_loaded(f'OpenParcel.notifyElementLoaded(\'{elem}\');')
         alert_text = self.page.handle_alert(accept=True, timeout=timeout)
 
@@ -214,3 +216,8 @@ class BrowserBaseCarrier(BaseCarrier):
             raise WaitTimeoutError(
                 'Alert from waiting for page to finish loading did not contain '
                 f'magic phrase. Got: {alert_text}')
+
+    def _timeout(self, timeout: float) -> float:
+        """Calculates a timeout value taking into account the obligatory base
+        timeout of our connection or proxy server."""
+        return self.base_timeout + timeout

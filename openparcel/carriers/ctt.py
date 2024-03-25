@@ -20,12 +20,12 @@ class CarrierCTT(BrowserBaseCarrier):
         try:
             self._fetch_page()
             try:
-                self.page.wait.title_change('Detalhe', timeout=8,
-                                            raise_err=True)
+                self.page.wait.title_change('Detalhe', raise_err=True,
+                                            timeout=self._timeout(10))
                 self._wait_page_complete(
                     '[data-block="TrackTrace.TT_Timeline_New"] '
                     '[data-block="CustomerArea.AC_TimelineItemCustom"]',
-                    timeout=8)
+                    timeout=self._timeout(10))
             except WaitTimeoutError as e:
                 self._scrape_check_error()
                 raise e
