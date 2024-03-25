@@ -61,6 +61,10 @@ class ScrapingReturnedError(TitledException):
                 return 'Parcel not found'
             case 'InvalidTrackingCode':
                 return 'Invalid tracking code'
+            case 'RateLimiting':
+                return 'Too many requests'
+            case 'Blocked':
+                return 'Blocked by carrier'
 
         self.status_code = 500
         return 'Unknown error'
@@ -72,6 +76,12 @@ class ScrapingReturnedError(TitledException):
                        'in the carrier\'s system.'
             case 'InvalidTrackingCode':
                 return 'The provided tracking code is invalid for this carrier.'
+            case 'RateLimiting':
+                return 'We have reached the request limit of this carrier.'
+            case 'Blocked':
+                return ('We have been blocked by the carrier for trying to '
+                        'scrape their website. Try again later after the'
+                        'system\'s proxy list has been refreshed.')
 
         return 'An unknown, but expected, error occurred while scraping the ' \
                'website.'

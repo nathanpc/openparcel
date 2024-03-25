@@ -204,6 +204,14 @@ window.OpenParcel = {
 			ParcelNotFound: {
 				id: 2,
 				name: "ParcelNotFound"
+			},
+			RateLimiting: {
+				id: 3,
+				name: "RateLimiting"
+			},
+			Blocked: {
+				id: 4,
+				name: "Blocked"
 			}
 		},
 
