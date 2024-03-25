@@ -114,11 +114,12 @@ class Proxy:
 class ProxyList:
     """Generic proxy list provider class."""
 
-    def __init__(self, url: str, api_key: str = None,
+    def __init__(self, url: str, api_key: str = None, auto_save: bool = True,
                  conn: sqlite3.Connection = None):
         self.url: str = url
         self.list: list[Proxy] = []
         self.conn: sqlite3.Connection = conn
+        self.auto_save: bool = auto_save
 
         # Import API key from configuration if needed.
         self._import_api_key(self.__class__.__name__, api_key)
@@ -132,13 +133,15 @@ class ProxyList:
         """Appends a proxy server to the list after performing some checks."""
         # Check if we already have this proxy in our database.
         if server.is_duplicate():
-            print(f'Duplicate proxy server {proxy.protocol}://{proxy.addr}:'
-                  f'{proxy.port} was ignored.')
+            print(f'Duplicate proxy server {server.protocol}://{server.addr}:'
+                  f'{server.port} was ignored.')
             return False
 
         # Test the proxy out before appending it to the list.
         if server.test():
             self.list.append(server)
+            if self.auto_save:
+                server.save()
             return True
 
         return False
@@ -173,9 +176,9 @@ class PubProxy(ProxyList):
     """Proxy list using PubProxy as the backend."""
 
     def __init__(self, api_key: str = None, country_denylist: list = None,
-                 conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: sqlite3.Connection = None):
         super().__init__('http://pubproxy.com/api/proxy?format=json',
-                         conn=conn, api_key=api_key)
+                         auto_save=auto_save, conn=conn, api_key=api_key)
 
         # Build up the request URL.
         if self.api_key is not None:
@@ -217,10 +220,10 @@ class Proxifly(ProxyList):
     """Proxy list using Proxifly as the backend."""
 
     def __init__(self, api_key: str = None, quantity: int = 5,
-                 conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: sqlite3.Connection = None):
         # Initialize the parent class.
         super().__init__('https://api.proxifly.dev/get-proxy', conn=conn,
-                         api_key=api_key)
+                         auto_save=auto_save, api_key=api_key)
 
         # Set up the request parameters.
         self.options = {
@@ -261,9 +264,9 @@ class OpenProxySpace(ProxyList):
     """Proxy list using Open Proxy Space as the backend."""
 
     def __init__(self, api_key: str = None, quantity: int = 5,
-                 conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: sqlite3.Connection = None):
         super().__init__('https://api.openproxy.space/premium/json',
-                         conn=conn, api_key=api_key)
+                         auto_save=auto_save, conn=conn, api_key=api_key)
 
         # Build up the request URL.
         self.url += (f'?apiKey={self.api_key}&amount={quantity}&smart=1'
@@ -298,11 +301,12 @@ class OpenProxySpace(ProxyList):
 class ProxyScrapeFree(ProxyList):
     """Proxy list using ProxyScrape freebies list as the backend."""
 
-    def __init__(self, timeout: int = 8000, conn: sqlite3.Connection = None):
+    def __init__(self, timeout: int = 8000, auto_save: bool = True,
+                 conn: sqlite3.Connection = None):
         url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
                f'request=displayproxies&protocol=all&timeout={timeout}'
                '&proxy_format=protocolipport&format=json')
-        super().__init__(url, conn=conn)
+        super().__init__(url, auto_save=auto_save, conn=conn)
 
     def _parse_response(self, response: requests.Response):
         # Sort the response list by timeout.
@@ -330,13 +334,9 @@ if __name__ == '__main__':
                          config['DB_HOST'])
     db.execute('PRAGMA foreign_keys = ON')
 
-    # Get a new proxy list.
-    proxies = ProxyScrapeFree(conn=db)
+    # Get a new proxy list and save automatically.
+    proxies = ProxyScrapeFree(auto_save=True, conn=db)
     proxies.load()
-
-    # Save all the fetched proxies into the database.
-    for proxy in proxies.list:
-        proxy.save()
 
     # Ensure we close the database connection.
     db.close()
