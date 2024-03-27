@@ -21,10 +21,11 @@ class CarrierDPDPT(BrowserBaseCarrier):
             self._fetch_page()
 
             try:
-                self._wait_title_change('Track & Trace', raise_err=True,
-                                        timeout=10)
+                # Wait for it to actually load something we can work with.
+                self._wait_title_change('Track & Trace', timeout=5)
+                self._wait_page_complete(['#content .table-responsive',
+                                          '#content strong'], timeout=8)
                 self._scrape_check_error()
-                self._wait_page_complete('#content .table-responsive')
             except WaitTimeoutError as e:
                 self._scrape_check_error()
                 raise e

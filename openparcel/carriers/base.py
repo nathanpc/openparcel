@@ -217,17 +217,56 @@ class BrowserBaseCarrier(BaseCarrier):
         with open(filepath, mode='r', encoding='utf-8') as f:
             return f.read()
 
-    def _wait_page_complete(self, elem: str, timeout: float = 5):
+    def _wait_page_complete(self, elems: list[str] | str, timeout: float = 5,
+                            auto_redirect: bool = True) -> int | None:
         """Waits until a page is completely loaded, including garbage that was
         loaded in via shitty frameworks such as React. This method will use some
-        hacks to determine when a specific element (selected using a Javascript
-        query string) has been loaded into the DOM."""
+        hacks to determine when specific elements (selected using a Javascript
+        query strings) have been loaded into the DOM."""
+        # Set up the Javascript argument.
+        args = 'null'
+        if isinstance(elems, str):
+            args = f'[\'{elems}\']'
+        elif hasattr(elems, '__iter__'):
+            # Ensure we don't have an empty list.
+            if len(elems) == 0:
+                raise AssertionError('List of elements to wait for must '
+                                     'contain at least a single element')
+
+            # Create the Javascript array.
+            args = f'[\'{elems[0]}\''
+            for elem in elems[1:]:
+                args += f', \'{elem}\''
+            args += ']'
+
+        # Run the script and set up the alert event handler.
         self._load_scraping_js()
-        self.page.run_js_loaded(f'OpenParcel.notifyElementLoaded(\'{elem}\');')
-        alert_text = self.page.handle_alert(accept=True, timeout=self._timeout(timeout))
+        self.debug_print('Waiting for elements to load: ' + json.dumps(elems))
+        self.page.run_js_loaded(f'OpenParcel.notifyElementLoaded({args});')
+        alert_text = self.page.handle_alert(accept=True,
+                                            timeout=self._timeout(timeout))
+        if alert_text == '':
+            # Looks like we are being redirected to another page.
+            if not auto_redirect:
+                return None
+
+            # Handle the redirection and recurse into it.
+            self._load_scraping_js()
+            self.debug_print('We have been redirected to another page.')
+            return self._wait_page_complete(elems, timeout=timeout,
+                                            auto_redirect=True)
+        elif isinstance(alert_text, bool) and not alert_text:
+            # Sadly the alert never happened.
+            self.debug_print('Page wait alert never triggered.',
+                             fail_silent=True)
+            raise WaitTimeoutError('Page wait alert dialog never triggered and '
+                                   'timed out')
 
         # Check if the dialog box was actually the one we were expecting.
-        if alert_text != "READY!":
+        match = re.match("READY! \\(([0-9]+)\\)", alert_text)
+        if match is None:
+            self.debug_print('Page wait alert did not match our pattern.',
+                             fail_silent=True)
             raise WaitTimeoutError(
                 'Alert from waiting for page to finish loading did not contain '
                 f'magic phrase. Got: {alert_text}')

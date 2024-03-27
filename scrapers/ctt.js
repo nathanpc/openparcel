@@ -7,13 +7,33 @@
  *                     errors.
  */
 function errorCheck() {
-	// Errors always appear in this iframe.
-	const iframe = document.querySelector("iframe[id*=objectSearchFrame]");
-	if (iframe === null)
-		return null;
-	const errBlock = iframe.contentWindow.document.querySelector(
-		"[data-block='TrackTrace.TT_ObjectErrorCard']");
+	// Handle errors that appear in the feedback popup message object.
+	const fbMessageContainer = document.querySelector("#feedbackMessageContainer");
+	if (fbMessageContainer !== null) {
+		const fbMessageText = fbMessageContainer.querySelector(".feedback-message-text");
+		if (fbMessageText !== null) {
+			const errMessage = fbMessageText.innerText;
 
+			// Check if we have been blocked (same message as rate limiting).
+			if (errMessage.includes("Atingiu o limite")) {
+				// Message: "Atingiu o limite permitido para pesquisas de objetos.
+				// Por favor, tente mais tarde"
+				return OpenParcel.error.create(OpenParcel.error.codes.Blocked);
+			}
+
+			return OpenParcel.error.create(OpenParcel.error.codes.Unknown);
+		}
+	}
+
+	// Handle errors that appear in the error message block object.
+	const errBlockSelector = "[data-block='TrackTrace.TT_ObjectErrorCard']";
+	let errBlock = document.querySelector(errBlockSelector);
+	if (errBlock === null) {
+		// Errors may appear in a specific iframe.
+		const iframe = document.querySelector("iframe[id*=objectSearchFrame]");
+		if (iframe !== null)
+			errBlock = iframe.contentWindow.document.querySelector(errBlockSelector);
+	}
 	if (errBlock !== null) {
 		const errMessage = errBlock.querySelector("[id*='Content'] [data-expression]").innerText;
 

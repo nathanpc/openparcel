@@ -18,23 +18,28 @@ class CarrierDHL(BrowserBaseCarrier):
     def fetch(self):
         try:
             self._fetch_page()
+            self._load_scraping_js()
+
+            # Wait for the page to load
             try:
+                self._wait_page_complete(
+                    ['.c-tracking-result--checkpoint',
+                     '.c-tracking-result--status-shipment-undefined'],
+                    timeout=10)
                 self._scrape_check_error()
-                self.page.wait.title_change('Track & Trace',
-                                            raise_err=True, timeout=10)
             except WaitTimeoutError:
                 # Looks like we need to bypass their anti-scraping measures.
                 self._scrape_check_error()
                 button = self.page.ele('css:.c-voc-tracking-bar--button'
                                        '.js--tracking--input-submit')
+                self.debug_print('Clicking the Track button...')
                 button.click(timeout=10)
-                self._wait_title_change('Track & Trace', raise_err=True,
-                                        timeout=10)
 
             # Finally scrape it.
             self._load_scraping_js()
-            self._wait_page_complete('.c-tracking-result--checkpoint',
-                                     timeout=8)
+            self._wait_page_complete(
+                ['.c-tracking-result--checkpoint',
+                 '.c-tracking-result--status-shipment-undefined'], timeout=8)
             self._scrape()
         finally:
             # Quit the browser.

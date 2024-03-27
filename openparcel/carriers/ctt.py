@@ -18,17 +18,28 @@ class CarrierCTT(BrowserBaseCarrier):
 
     def fetch(self):
         try:
+            # Load the website.
             self._fetch_page()
+            self._load_scraping_js()
+
             try:
-                self._wait_title_change('Detalhe', raise_err=True,
-                                        timeout=10)
+                # Wait for their shitty UI framework to populate the page.
                 self._wait_page_complete(
-                    '[data-block="TrackTrace.TT_Timeline_New"] '
-                    '[data-block="CustomerArea.AC_TimelineItemCustom"]',
-                    timeout=10)
+                    ['[data-block="TrackTrace.TT_Timeline_New"] '
+                     '[data-block="CustomerArea.AC_TimelineItemCustom"]',
+                     '#feedbackMessageContainer',
+                     '[data-block="TrackTrace.TT_ObjectErrorCard"]'],
+                    timeout=18)
+                self._scrape_check_error()
             except WaitTimeoutError as e:
                 self._scrape_check_error()
                 raise e
+
+            # Finally we have possibly reached the tracking history page.
+            self._wait_page_complete(
+                '[data-block="TrackTrace.TT_Timeline_New"] '
+                '[data-block="CustomerArea.AC_TimelineItemCustom"]',
+                timeout=10)
             self._scrape()
         finally:
             # Quit the browser.

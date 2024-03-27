@@ -359,6 +359,7 @@ window.OpenParcel = {
 		if (newLine)
 			msg += "\n";
 		console.value += msg;
+		console.scrollTop = 99999;
 	},
 
 	dropTokenElement() {
@@ -378,42 +379,110 @@ window.OpenParcel = {
 	},
 
 	/**
-	 * Waits for an element to exist.
+	 * Notifies the engine that an element has finally been loaded into the page.
 	 *
-	 * @param selector Query selector for the element to wait for.
-	 *
-	 * @returns {Promise<Element>} Promise of the loaded element.
+	 * @param selectors {Array<String>} Query selectors for elements to wait for.
 	 */
-	waitForElement(selector) {
-		return new Promise(resolve => {
-			if (document.querySelector(selector)) {
-				return resolve(document.querySelector(selector));
+	notifyElementLoaded(selectors) {
+		const observers = [];
+
+		// Drop a token element to test for redirects or rewrites.
+		const tokenElement = this.dropTokenElement();
+		const tokenObserver = new MutationObserver(function (mutations) {
+			OpenParcel.debugLog("Something touched our token element: ", false);
+			OpenParcel.debugLog(mutations);
+		});
+		tokenObserver.observe(tokenElement, {
+			childList: true,
+			subtree: true,
+			attributes: true
+		});
+
+		// Detect redirections from shitty web frameworks.
+		window.addEventListener('beforeunload', (event) => {
+			/* Since this is deprecated Chrome will instead show a dialog that
+			   our caller script receives as an empty string. */
+			event.returnValue = 'REDIRECT';
+		});
+
+		// Check if something happened to our Python caller.
+		if (selectors === null)
+			throw new TypeError("Selectors to wait for must not be null");
+
+		// Checks for our elements of interest.
+		const checkForElements = function () {
+			// Ensure no new iframes popped up.
+			observeIframes();
+
+			// Go through observers.
+			for (const obs of observers) {
+				// Go through querying the selectors of interest.
+				for (let i = 0; i < selectors.length; i++) {
+					if (obs.parentDocument.querySelector(selectors[i])) {
+						// Log the fact that we got one.
+						OpenParcel.debugLog("Selector found in page: " +
+							selectors[i]);
+
+						// Disconnect all other observers.
+						observers.forEach(function (obs) {
+							OpenParcel.debugLog("Disconnecting observer: ",
+								false);
+							obs.observer.disconnect();
+						});
+						tokenObserver.disconnect();
+
+						// Alert the parent script.
+						alert("READY! (" + i + ")");
+						return;
+					}
+				}
+			}
+		};
+
+		// Starts observing a body of interest.
+		const startObserving = function (parentDocument, elem) {
+			// Check if the element isn't already being observed.
+			for (const item of observers) {
+				if (item.elem === elem)
+					return;
 			}
 
-			const observer = new MutationObserver(mutations => {
-				if (document.querySelector(selector)) {
-					observer.disconnect();
-					resolve(document.querySelector(selector));
-				}
+			// Push our new observer into the observers array.
+			observers.push({
+				parentDocument: parentDocument,
+				elem: elem,
+				observer: new MutationObserver(function () {
+					// Check if the element was found.
+					checkForElements();
+				})
 			});
 
 			// If you get "parameter 1 is not of type 'Node'" error, see
 	        // https://stackoverflow.com/a/77855838/492336
-			observer.observe(document.body, {
+			const obs = observers[observers.length - 1];
+			obs.observer.observe(obs.elem, {
 				childList: true,
 				subtree: true
 			});
-		});
-	},
 
-	/**
-	 * Notifies the engine that an element has finally been loaded into the page.
-	 *
-	 * @param selector Query selector for the element to wait for.
-	 */
-	notifyElementLoaded(selector) {
-	    this.waitForElement(selector).then(function (elem) {
-	        alert("READY!");
-	    });
+			OpenParcel.debugLog("Started observing " +
+				"<" + elem.tagName.toLowerCase() + " id=\"" + elem.id + "\" " +
+				"class=\"" + elem.classList + "\">")
+		};
+
+		// Start observing all the iframes in the page as well.
+		const observeIframes = function () {
+			const iframes = document.getElementsByTagName("iframe");
+			for (let i = 0; i < iframes.length; i++)
+				startObserving(iframes[i].contentWindow.document,
+					iframes[i].contentWindow.document.body);
+		};
+
+		// Observe changes in the DOM for our elements.
+		startObserving(document, document.body);
+		observeIframes();
+
+		// Check if any of the elements are already in the document.
+		checkForElements();
 	}
 };
