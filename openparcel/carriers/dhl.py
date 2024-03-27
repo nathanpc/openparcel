@@ -21,22 +21,20 @@ class CarrierDHL(BrowserBaseCarrier):
             try:
                 self._scrape_check_error()
                 self.page.wait.title_change('Track & Trace',
-                                            raise_err=True,
-                                            timeout=self._timeout(10))
+                                            raise_err=True, timeout=10)
             except WaitTimeoutError:
                 # Looks like we need to bypass their anti-scraping measures.
                 self._scrape_check_error()
                 button = self.page.ele('css:.c-voc-tracking-bar--button'
                                        '.js--tracking--input-submit')
                 button.click(timeout=10)
-                self.page.wait.title_change('Track & Trace',
-                                            raise_err=True,
-                                            timeout=self._timeout(10))
+                self._wait_title_change('Track & Trace', raise_err=True,
+                                        timeout=10)
 
             # Finally scrape it.
             self._load_scraping_js()
             self._wait_page_complete('.c-tracking-result--checkpoint',
-                                     timeout=self._timeout(8))
+                                     timeout=8)
             self._scrape()
         finally:
             # Quit the browser.

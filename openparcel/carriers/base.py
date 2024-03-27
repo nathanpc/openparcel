@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import datetime
+import json
 import random
 import re
 import secrets
@@ -10,7 +11,7 @@ from string import Template
 from typing import Optional
 
 from DrissionPage import ChromiumPage, ChromiumOptions
-from DrissionPage.errors import WaitTimeoutError
+from DrissionPage.errors import WaitTimeoutError, JavaScriptError
 
 from openparcel.exceptions import (TrackingCodeNotFound, ScrapingJsNotFound,
                                    ScrapingReturnedError)
@@ -138,8 +139,18 @@ class BrowserBaseCarrier(BaseCarrier):
 
         self.proxy = proxy
 
+    def debug_print(self, message: str, fail_silent: bool = False):
+        """Prints a message in the scraped page's debug window."""
+        try:
+            self.page.run_js_loaded(
+                f'OpenParcel.debugLog({json.dumps(message)});')
+        except JavaScriptError as e:
+            if not fail_silent:
+                raise e
+
     def _scrape(self, func_name: str = 'scrape'):
         # Get the scraped response.
+        self.debug_print('Scraping for tracking information...')
         self._resp_dict = self.page.run_js_loaded(f'{func_name}();',
                                                   as_expr=True)
 
@@ -152,9 +163,10 @@ class BrowserBaseCarrier(BaseCarrier):
         if load_scripts:
             self._load_scraping_js()
 
+        self.debug_print('Scraping for errors...')
         self._scrape(func_name='errorCheck')
 
-    def _fetch_page(self):
+    def _fetch_page(self, timeout: float = 10):
         """Sets up the scraping web browser and begins fetching the carrier's
         tracking page."""
         # Get a new browser for us to play around with if needed.
@@ -172,7 +184,8 @@ class BrowserBaseCarrier(BaseCarrier):
             self.page = ChromiumPage(addr_or_opts=opts)
 
         # Get the tracking website.
-        self.page.get(self.get_tracking_url())
+        self.page.get(self.get_tracking_url(), timeout=self._timeout(timeout),
+                      retry=1)
         self._load_scraping_js()
 
     def _close_page(self):
@@ -185,6 +198,8 @@ class BrowserBaseCarrier(BaseCarrier):
         """Loads scraping scripts into the page."""
         self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
         self.page.run_js_loaded(self._get_scraping_js(), as_expr=True)
+        self.debug_print(
+            f'Scraping scripts loaded at {datetime.datetime.now().time()}')
 
     def _get_scraping_js(self, name: str = None) -> str:
         """Gets the Javascript script to run in order to scrape the web page."""
@@ -209,13 +224,23 @@ class BrowserBaseCarrier(BaseCarrier):
         query string) has been loaded into the DOM."""
         self._load_scraping_js()
         self.page.run_js_loaded(f'OpenParcel.notifyElementLoaded(\'{elem}\');')
-        alert_text = self.page.handle_alert(accept=True, timeout=timeout)
+        alert_text = self.page.handle_alert(accept=True, timeout=self._timeout(timeout))
 
         # Check if the dialog box was actually the one we were expecting.
         if alert_text != "READY!":
             raise WaitTimeoutError(
                 'Alert from waiting for page to finish loading did not contain '
                 f'magic phrase. Got: {alert_text}')
+
+        return int(match.groups()[0])
+
+    def _wait_title_change(self, contains: str, timeout: float,
+                           raise_err: bool = True):
+        """Waits for a page's title to change to something that contains the
+        specified string."""
+        self.debug_print(f'Waiting for page title to change "{contains}"...')
+        self.page.wait.title_change(contains, raise_err=raise_err,
+                                    timeout=self._timeout(timeout))
 
     def _timeout(self, timeout: float) -> float:
         """Calculates a timeout value taking into account the obligatory base

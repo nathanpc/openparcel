@@ -316,6 +316,68 @@ window.OpenParcel = {
 	},
 
 	/**
+	 * Logs a message to our debugging log window in the web page. This is meant
+	 * to assist us when we don't have access to the Developer Tools pane.
+	 *
+	 * @param obj {Object|String} Object or message to be logged.
+	 * @param [newLine] {Boolean} Should we append a new line to the message?
+	 */
+	debugLog(obj, newLine = true) {
+		// Check if our debug window is currently present.
+		if (document.getElementById("openparcel-debugger") === null) {
+			// Create the window.
+			const root = document.createElement("div");
+			root.id = "openparcel-debugger";
+			root.style.cssText = "position: absolute; z-index: 9999; " +
+				"height: 150px; width: 500px; top: 15px; left: 15px; " +
+				"padding: 5px; background-color: whitesmoke; " +
+				"border: 1px solid #c8c8c8;";
+
+			// Create the console.
+			const elem = document.createElement("textarea");
+			elem.id = "op-console";
+			elem.style.cssText = "width: 100%; height: 100%; font-size: 10pt; " +
+				"font-family: monospace; box-sizing: border-box;";
+			root.appendChild(elem);
+
+			// Append it to the body.
+			document.body.appendChild(root);
+		}
+
+		// Create the message to be logged.
+		let msg = "";
+		if (typeof obj === 'string' || obj instanceof String) {
+			// It's just a string.
+			msg = obj;
+		} else {
+			// It's an object. Convert it to a string and print it.
+			msg = JSON.stringify(obj, undefined, 2);
+		}
+
+		// Print the message and append a newline if needed.
+		const console = document.getElementById("op-console");
+		if (newLine)
+			msg += "\n";
+		console.value += msg;
+	},
+
+	dropTokenElement() {
+		// Get the token element.
+		let elem = document.getElementById("op-token-elem");
+
+		// Drop a new token element on the page if it doesn't exist.
+		if (elem === null) {
+			elem = document.createElement("div");
+			elem.id = "op-token-elem";
+			elem.innerText = "We are scraping you!";
+
+			return document.body.appendChild(elem);
+		}
+
+		return elem;
+	},
+
+	/**
 	 * Waits for an element to exist.
 	 *
 	 * @param selector Query selector for the element to wait for.

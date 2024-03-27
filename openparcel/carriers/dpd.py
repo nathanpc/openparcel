@@ -17,16 +17,19 @@ class CarrierDPDPT(BrowserBaseCarrier):
 
     def fetch(self):
         try:
+            # Load the page in the browser.
             self._fetch_page()
+
             try:
-                self.page.wait.title_change('Track & Trace',
-                                            raise_err=True,
-                                            timeout=self._timeout(10))
+                self._wait_title_change('Track & Trace', raise_err=True,
+                                        timeout=10)
                 self._scrape_check_error()
                 self._wait_page_complete('#content .table-responsive')
             except WaitTimeoutError as e:
                 self._scrape_check_error()
                 raise e
+
+            # Finally scrape it.
             self._scrape()
         finally:
             # Quit the browser.
