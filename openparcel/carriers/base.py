@@ -56,9 +56,13 @@ class BaseCarrier:
         """Fetches tracking updates from the carrier's tracking website."""
         raise NotImplementedError
 
+    def created_delta(self) -> datetime.timedelta:
+        """Gets the time delta between when the parcel was created and now."""
+        return datetime.datetime.now(datetime.UTC) - self.created
+
     def is_outdated(self) -> bool:
         """Checks if the parcel is outdated given its creation date."""
-        return ((datetime.datetime.now(datetime.UTC) - self.created) >
+        return (self.created_delta() >
                 datetime.timedelta(seconds=self.outdated_period_secs))
 
     def from_cache(self, db_id: int, cache: dict, created: datetime.datetime,
@@ -93,28 +97,34 @@ class BaseCarrier:
 
     def get_resp_dict(self, extra: dict = None) -> dict:
         """Creates the response dictionary with all the information gathered
-        for the parcel."""
+        about the parcel."""
+        # Build up the response object.
         resp = self._resp_dict
-
-        # Add additional information to object.
-        resp['id'] = self.slug
-        resp['name'] = self.parcel_name
-        resp['cached'] = self.cached
-        resp['archived'] = self.archived
-        resp['carrier'] = {
-            'id': self.uid,
-            'name': self.name
-        }
-        resp['accentColor'] = self.accent_color
-        resp['created'] = self.created.isoformat()
-        resp['lastUpdated'] = self.last_updated.isoformat()
-        resp['outdated'] = self.is_outdated()
+        resp.update(self.as_dict())
 
         # Append any extras.
         if extra is not None:
             resp |= extra
 
         return resp
+
+    def as_dict(self) -> dict:
+        """Dictionary representation of this object."""
+        return {
+            'id': self.slug,
+            'name': self.parcel_name,
+            'cached': self.cached,
+            'archived': self.archived,
+            'outdated': self.is_outdated(),
+            'carrier': {
+                'id': self.uid,
+                'name': self.name
+            },
+            'accentColor': self.accent_color,
+            'created': self.created.isoformat(),
+            'lastUpdated': self.last_updated.isoformat(),
+            'trackingUrl': self.get_tracking_url()
+        }
 
     def _scrape(self):
         """Scrapes the tracking information and stores the results
@@ -147,6 +157,15 @@ class BrowserBaseCarrier(BaseCarrier):
         except JavaScriptError as e:
             if not fail_silent:
                 raise e
+
+    def as_dict(self) -> dict:
+        base = super().as_dict()
+        base['browser'] = {
+            'proxy': self.proxy,
+            'base_timeout': self.base_timeout
+        }
+
+        return base
 
     def _scrape(self, func_name: str = 'scrape'):
         # Get the scraped response.

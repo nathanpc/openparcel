@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import logging
 import os
 import errno
 import traceback
@@ -8,14 +8,26 @@ from typing import Optional
 
 import DrissionPage.errors
 
+from openparcel.logger import Logger, LoggerNotFound
+
 
 class TitledException(Exception):
     """An exception that has a title and a message associated with it."""
 
-    def __init__(self, title: str, message: str, status_code: int):
+    def __init__(self, title: str, message: str, status_code: int,
+                 logger: Logger = None):
         self.title = title
         self.message = message
         self.status_code = status_code
+        self.logger = logger
+
+    def log(self, level: int, context: dict = None):
+        """Logs the occurrence of this exception."""
+        if self.logger is None:
+            raise LoggerNotFound
+
+        self.logger.log(level, f'{self.title}: {self.message}',
+                        context=context)
 
     def resp_dict(self) -> dict:
         """Returns the equivalent response dictionary for the web service."""
@@ -91,16 +103,19 @@ class ScrapingBrowserError(TitledException):
     """Error raised when the scraping browser raises an exception and crashes.
     These are usually caused by an unexpected issue while scraping."""
 
-    def __init__(self, err: DrissionPage.errors.BaseError, carrier_id: str,
-                 tracking_code: str):
+    def __init__(self, err: DrissionPage.errors.BaseError, carrier,
+                 logger: Logger):
         super().__init__(
             title='Scraping error',
             message='An error occurred while trying to fetch the tracking '
                     'history from the carrier\'s website.',
-            status_code=500)
+            status_code=500, logger=logger)
         self.origin = err
         self.trace: str = traceback.format_exc()
-        self.data: dict = {
-            'carrierId': carrier_id,
-            'trackingCode': tracking_code
-        }
+        self.data: dict = carrier.as_dict()
+
+        # Log the incident.
+        self.log(logging.ERROR, {
+            'context': carrier.as_dict(),
+            'traceback': self.trace
+        })

@@ -14,13 +14,18 @@ import yaml
 from flask import Flask, request, g
 
 import openparcel.carriers as carriers
+from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError)
 
+# Get our application's logger instance.
+root_logger = Logger('flask', 'app')
+
 # Check if we have a configuration file present.
 config_path = 'config/config.yml'
 if not os.path.exists(config_path):
+    root_logger.critical('Missing configuration file.')
     print(f'Missing the configuration file in "{config_path}". Duplicate the '
           'example file contained in the same folder and change anything you '
           'see fit.')
@@ -37,6 +42,7 @@ def connect_db() -> sqlite3.Connection:
     if 'db' not in g:
         g.db = sqlite3.connect(app.config['DB_HOST'])
         g.db.execute('PRAGMA foreign_keys = ON')
+        root_logger.debug('Connected to the primary database.')
 
     return g.db
 
@@ -48,6 +54,7 @@ def app_context_teardown(exception):
     db = g.pop('db', None)
     if db is not None:
         db.close()
+        root_logger.debug('Primary database connection closed')
 
 
 @app.errorhandler(TitledException)
@@ -205,8 +212,13 @@ def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
 
 
 def user_id() -> Optional[int]:
-    """Returns the currently logged user ID if authenticated. None otherwise."""
+    """Returns currently logged user ID if authenticated. None otherwise."""
     return g.user_id if is_authenticated() else None
+
+
+def logged_username() -> Optional[int]:
+    """Returns currently logged username if authenticated. None otherwise."""
+    return g.username if is_authenticated() else None
 
 
 def should_refresh_parcel(parcel: BaseCarrier, timediff: float,
@@ -232,10 +244,14 @@ def ping_pong():
 
 @app.route('/track/<carrier_id>/<code>')
 def track(carrier_id: str, code: str, force: bool = False,
-          carrier: BaseCarrier = None):
+          carrier: BaseCarrier = None, logger: Logger = None):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
     # Check if we are authorized.
     http_authenticate('auth_token')
+
+    # Get a logger for us.
+    if logger is None:
+        logger = root_logger.for_subsystem('track.carrier_and_code')
 
     # Get the requested carrier if not provided.
     if carrier is None:
@@ -308,6 +324,11 @@ def track(carrier_id: str, code: str, force: bool = False,
                     last_updated=datetime.datetime.fromisoformat(row[5]),
                     parcel_name=carrier.parcel_name,
                     archived=carrier.archived)
+                logger.info(
+                    f'User {logged_username()} requested parcel {carrier.slug} '
+                    f'({carrier.db_id}) and is being served a cached version '
+                    f'since it is {carrier.created_delta().total_seconds()} '
+                    'secs old.')
                 return carrier.get_resp_dict()
 
             # Store the parcel ID.
@@ -316,9 +337,15 @@ def track(carrier_id: str, code: str, force: bool = False,
     # Fetch tracking history.
     try:
         # Fetch tracking history.
+        prefetch_now = datetime.datetime.now(datetime.UTC)
         data = carrier.fetch()
         cur = conn.cursor()
         now = datetime.datetime.now(datetime.UTC)
+
+        # Log the time it took to fetch the parcel.
+        logger.info(f'Parcel {carrier_id} {code} fetched in '
+                    f'{(now - prefetch_now).total_seconds()} seconds using '
+                    f'proxy {carrier.proxy}')
 
         # Is this the first time that we are caching this parcel?
         if carrier.db_id is None:
@@ -330,6 +357,8 @@ def track(carrier_id: str, code: str, force: bool = False,
                 (carrier_id, code, now.isoformat(), carrier.generate_slug()))
             conn.commit()
             carrier.set_parcel_id(cur.lastrowid)
+            logger.info(f'New parcel {carrier.slug} ({carrier.db_id}) added to '
+                        'the system.', {'context': carrier.as_dict()})
 
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
@@ -337,12 +366,14 @@ def track(carrier_id: str, code: str, force: bool = False,
                     (carrier.db_id, now.isoformat(), json.dumps(data)))
         conn.commit()
         cur.close()
+        logger.info(f'Updated tracking history for parcel {carrier.slug} '
+                    f'({carrier.db_id}) by {logged_username()}.')
 
         # Send tracking history to the client.
         return carrier.get_resp_dict()
     except DrissionPage.errors.BaseError as e:
         # Probably an error with our scraping stuff.
-        raise ScrapingBrowserError(e, carrier_id, code)
+        raise ScrapingBrowserError(e, carrier, logger=logger)
 
 
 @app.route('/track/<parcel_slug>')
@@ -350,6 +381,11 @@ def track_id(parcel_slug: str, force: bool = False):
     """Tracks the history of a parcel given a parcel ID."""
     # Check if we are authorized.
     http_authenticate('auth_token')
+
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('track.slug')
+
+    # TODO: Sanitize parcel slug.
 
     # Check if it has been previously cached.
     conn = connect_db()
@@ -369,6 +405,8 @@ def track_id(parcel_slug: str, force: bool = False):
     row = cur.fetchone()
     cur.close()
     if row is None:
+        logger.info(f'User {logged_username()} tried to track a parcel using '
+                    f'an invalid slug ({parcel_slug}).')
         raise TitledException(
             title='Invalid parcel',
             message='The provided parcel slug does not match with any saved '
@@ -389,11 +427,19 @@ def track_id(parcel_slug: str, force: bool = False):
     # Check if it's outdated or archived and always serve a cached version.
     if (carrier.is_outdated()
             or not should_refresh_parcel(carrier, row[-1], force=force)):
+        if carrier.is_outdated():
+            status_log = 'outdated'
+        else:
+            status_log = f'{carrier.created_delta().total_seconds()} secs old'
+        logger.info(f'User {logged_username()} requested parcel {carrier.slug} '
+                    f'({carrier.db_id}) and is being served a cached version '
+                    f'since it is {status_log}.')
+
         return carrier.get_resp_dict()
 
     # Fetch some fresh (or cached) information about this parcel.
     return track(carrier.uid, carrier.tracking_code, force=force,
-                 carrier=carrier)
+                 carrier=carrier, logger=logger)
 
 
 @app.route('/register', methods=['POST'])
@@ -401,6 +447,9 @@ def register():
     """Registers the user in the database."""
     username = request.form['username'].lower()
     password = request.form['password']
+
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('register')
 
     # Check if we are accepting registrations.
     if not app.config['ALLOW_REGISTRATION']:
@@ -455,6 +504,7 @@ def register():
     conn.commit()
     cur.close()
 
+    logger.info(f'New user registered: {username}')
     return {
         'title': 'Registration successful',
         'message': 'User was successfully registered.'
@@ -470,6 +520,9 @@ def create_auth_token(description: str = None, username: str = None,
         http_authenticate('password')
     else:
         authenticate(username, password)
+
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('auth_token.new')
 
     # Get the description.
     if description is None:
@@ -497,6 +550,7 @@ def create_auth_token(description: str = None, username: str = None,
     conn.commit()
     cur.close()
 
+    logger.info(f'New authentication token generated for {logged_username()}')
     return {
         'description': description,
         'token': auth_token
@@ -511,6 +565,9 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
         http_authenticate(('password', 'auth_token'))
     else:
         authenticate(username, password, auth_token)
+
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('auth_token.revoke')
 
     # Check if the authentication token to revoke actually exists.
     conn = connect_db()
@@ -536,6 +593,8 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
     conn.commit()
     cur.close()
 
+    logger.info(f'User {logged_username()} revoked authentication token ' +
+                revoke_token)
     return {
         'title': 'Authentication token revoked',
         'message': f'The authentication token for {row[0]} has been '
@@ -548,6 +607,11 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
     """Stores a parcel into the user's tracked parcels list."""
     # Check if we are authorized.
     http_authenticate('auth_token')
+
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('parcel_save.carrier_and_code')
+
+    # TODO: Sanitize parcel slug.
 
     # Get the parcel ID.
     conn = connect_db()
@@ -570,18 +634,25 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
             status_code=422)
 
     # Delegate the operation.
-    return save_parcel_id(row[1], row[2], archived, parcel_id=int(row[0]))
+    return save_parcel_id(row[1], row[2], archived, parcel_id=int(row[0]),
+                          logger=logger)
 
 
 @app.route('/save/<parcel_slug>', methods=['POST', 'DELETE'])
 def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
-                   parcel_id: int = None):
+                   parcel_id: int = None, logger: Logger = None):
     """Stores a parcel into the user's tracked parcels list."""
     if name is None:
         name = request.form.get('name') or None
 
     # Check if we are authorized.
     http_authenticate('auth_token')
+
+    # Get a logger for us.
+    if logger is None:
+        logger = root_logger.for_subsystem('parcel_save.slug')
+
+    # TODO: Sanitize parcel slug.
 
     # Check if the parcel is already in the user's list.
     conn = connect_db()
@@ -618,6 +689,8 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
         conn.commit()
         cur.close()
 
+        logger.info(f'User {logged_username()} removed parcel {parcel_slug} '
+                    f'({parcel_id}) from its tracking list')
         return {
             'title': 'Removed from saved list',
             'message': f'Parcel "{name}" was removed from the user\'s list.'
@@ -653,6 +726,8 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     conn.commit()
     cur.close()
 
+    logger.info(f'User {logged_username()} added parcel {parcel_slug} '
+                f'({parcel_id}) to its tracking list')
     return {
         'title': 'Parcel saved',
         'message': 'The parcel has been successfully added to your tracked '
@@ -665,6 +740,11 @@ def archive_flag_parcel(parcel_slug: str):
     """Marks a saved parcel as archived or not."""
     # Check if we are authorized.
     http_authenticate('auth_token')
+
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('parcel_archive.slug')
+
+    # TODO: Sanitize parcel slug.
 
     # Get the saved parcel.
     conn = connect_db()
@@ -709,11 +789,15 @@ def archive_flag_parcel(parcel_slug: str):
 
     # Respond with a pretty message.
     if request.method == 'POST':
+        logger.info(f'User {logged_username()} archived parcel {parcel_slug} '
+                    f'({parcel_id})')
         return {
             'title': 'Parcel archived',
             'message': f'{name} has been archived successfully.'
         }
     else:
+        logger.info(f'User {logged_username()} unarchived parcel {parcel_slug} '
+                    f'({parcel_id})')
         return {
             'title': 'Parcel unarchived',
             'message': f'{name} has been unarchived successfully.'
