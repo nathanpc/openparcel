@@ -68,7 +68,7 @@ function scrape() {
 
 	// Get the package creation date.
 	const creationDate = (function (dtString) {
-		const match = dtString.trim().match(/(\d+) (\w+) (\d+), (\d+)h(\d+)/);
+		const match = dtString.trim().match(/(\d+) ([^ ]+) (\d+), (\d+)h(\d+)/);
 		return new Date(
 			Number(match[3]),      // Year
 			OpenParcel.calendar.getMonthPT(match[2]),  // Month
