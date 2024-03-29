@@ -95,6 +95,16 @@ class BaseCarrier:
 
         return self.slug
 
+    @staticmethod
+    def is_slug_valid(slug: str) -> bool:
+        """Checks if a slug is in a valid format."""
+        # Is it too long?
+        if len(slug) > 35:
+            return False
+
+        # Check if it only contains the characters that we care about.
+        return re.match('^[a-z-0-9]+$', slug) is not None
+
     def get_resp_dict(self, extra: dict = None) -> dict:
         """Creates the response dictionary with all the information gathered
         about the parcel."""

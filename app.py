@@ -443,7 +443,16 @@ def track_id(parcel_slug: str, force: bool = False):
                  f'User {logged_username()} trying to track a parcel using '
                  f'slug {parcel_slug}')
 
-    # TODO: Sanitize parcel slug.
+    # Check if parcel slug is valid.
+    if not BaseCarrier.is_slug_valid(parcel_slug):
+        logger.info('slug_invalid',
+                    f'User {logged_username()} tried to track a parcel using '
+                    f'an invalid slug ({parcel_slug}).')
+        raise TitledException(
+            title='Invalid parcel slug',
+            message='Provided parcel slug contains invalid characters or is '
+                    'too long.',
+            status_code=422)
 
     # Check if it has been previously cached.
     conn = connect_db()
@@ -463,11 +472,11 @@ def track_id(parcel_slug: str, force: bool = False):
     row = cur.fetchone()
     cur.close()
     if row is None:
-        logger.info('slug_invalid',
+        logger.info('slug_not_found',
                     f'User {logged_username()} tried to track a parcel using '
-                    f'an invalid slug ({parcel_slug}).')
+                    f'a slug ({parcel_slug}) that we could not match to them.')
         raise TitledException(
-            title='Invalid parcel',
+            title='Unknown parcel',
             message='The provided parcel slug does not match with any saved '
                     'parcels for this user.',
             status_code=404)
@@ -676,8 +685,6 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
 
-    # TODO: Sanitize parcel slug.
-
     # Get the parcel ID.
     conn = connect_db()
     cur = conn.cursor()
@@ -718,7 +725,16 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
 
-    # TODO: Sanitize parcel slug.
+    # Check if parcel slug is valid.
+    if not BaseCarrier.is_slug_valid(parcel_slug):
+        logger.info('slug_invalid',
+                    f'User {logged_username()} tried to save a parcel using '
+                    f'an invalid slug ({parcel_slug}).')
+        raise TitledException(
+            title='Invalid parcel slug',
+            message='Provided parcel slug contains invalid characters or is '
+                    'too long.',
+            status_code=422)
 
     # Check if the parcel is already in the user's list.
     conn = connect_db()
@@ -813,7 +829,16 @@ def archive_flag_parcel(parcel_slug: str):
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
 
-    # TODO: Sanitize parcel slug.
+    # Check if parcel slug is valid.
+    if not BaseCarrier.is_slug_valid(parcel_slug):
+        logger.info('slug_invalid',
+                    f'User {logged_username()} tried to archive a parcel using '
+                    f'an invalid slug ({parcel_slug}).')
+        raise TitledException(
+            title='Invalid parcel slug',
+            message='Provided parcel slug contains invalid characters or is '
+                    'too long.',
+            status_code=422)
 
     # Get the saved parcel.
     conn = connect_db()
