@@ -26,11 +26,13 @@ class Logger:
         """Creates a derived logger for a specific subsystem."""
         return Logger(self.logger.name, subsystem, log_dir=self.log_dir)
 
-    def log(self, level: int, message: str, context: dict = None):
+    def log(self, level: int, action_id: str, message: str,
+            context: dict = None):
         """Logs something using our logging system."""
         # Merge our extra data into a single dictionary.
         extra = {
             'subsystem': self.subsystem,
+            'action': action_id,
             'detail': ''
         }
         if context is not None:
@@ -39,25 +41,25 @@ class Logger:
         # Perform the logging operation.
         self.logger.log(level, message, extra=extra)
 
-    def debug(self, message: str, context: dict = None):
+    def debug(self, action_id: str, message: str, context: dict = None):
         """Logs a debug level message."""
-        self.log(logging.DEBUG, message, context=context)
+        self.log(logging.DEBUG, action_id, message, context=context)
 
-    def info(self, message: str, context: dict = None):
+    def info(self, action_id: str, message: str, context: dict = None):
         """Logs an info level message."""
-        self.log(logging.INFO, message, context=context)
+        self.log(logging.INFO, action_id, message, context=context)
 
-    def warning(self, message: str, context: dict = None):
+    def warning(self, action_id: str, message: str, context: dict = None):
         """Logs a warning level message."""
-        self.log(logging.WARNING, message, context=context)
+        self.log(logging.WARNING, action_id, message, context=context)
 
-    def error(self, message: str, context: dict = None):
+    def error(self, action_id: str, message: str, context: dict = None):
         """Logs an error level message."""
-        self.log(logging.ERROR, message, context=context)
+        self.log(logging.ERROR, action_id, message, context=context)
 
-    def critical(self, message: str, context: dict = None):
+    def critical(self, action_id: str, message: str, context: dict = None):
         """Logs a critical level message."""
-        self.log(logging.CRITICAL, message, context=context)
+        self.log(logging.CRITICAL, action_id, message, context=context)
 
     def _setup(self):
         """Sets up the logger for us."""
@@ -70,13 +72,11 @@ class Logger:
             self.log_dir = dirname(dirname(abspath(__file__))) + '/logs'
         os.makedirs(self.log_dir, exist_ok=True)
 
-        # Create a detailed formatter.
-        df = logging.Formatter('%(asctime)s [%(levelname)s] {%(subsystem)s} '
-                               '%(message)s %(detail)s')
-
-        # Create a simple formatter.
-        sf = logging.Formatter('%(asctime)s [%(levelname)s] {%(subsystem)s} '
-                               '%(message)s')
+        # Create our formatters.
+        base_format = ('%(asctime)s [%(levelname)s] {%(subsystem)s} '
+                       '|%(action)s| %(message)s')
+        df = logging.Formatter(f'{base_format} %(detail)s')
+        sf = logging.Formatter(base_format)
 
         # Create the file handler.
         fh = TimedRotatingFileHandler(dirname(dirname(abspath(__file__))) +

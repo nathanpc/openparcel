@@ -25,7 +25,7 @@ root_logger = Logger('flask', 'app')
 # Check if we have a configuration file present.
 config_path = 'config/config.yml'
 if not os.path.exists(config_path):
-    root_logger.critical('Missing configuration file.')
+    root_logger.critical('config_notfound', 'Missing configuration file.')
     print(f'Missing the configuration file in "{config_path}". Duplicate the '
           'example file contained in the same folder and change anything you '
           'see fit.')
@@ -42,7 +42,7 @@ def connect_db() -> sqlite3.Connection:
     if 'db' not in g:
         g.db = sqlite3.connect(app.config['DB_HOST'])
         g.db.execute('PRAGMA foreign_keys = ON')
-        root_logger.debug('Connected to the primary database.')
+        root_logger.debug('db_connected', 'Connected to the primary database.')
 
     return g.db
 
@@ -54,7 +54,7 @@ def app_context_teardown(exception):
     db = g.pop('db', None)
     if db is not None:
         db.close()
-        root_logger.debug('Primary database connection closed')
+        root_logger.debug('db_closed', 'Primary database connection closed')
 
 
 @app.errorhandler(TitledException)
@@ -216,7 +216,7 @@ def user_id() -> Optional[int]:
     return g.user_id if is_authenticated() else None
 
 
-def logged_username() -> Optional[int]:
+def logged_username() -> Optional[str]:
     """Returns currently logged username if authenticated. None otherwise."""
     return g.username if is_authenticated() else None
 
@@ -252,11 +252,17 @@ def track(carrier_id: str, code: str, force: bool = False,
     # Get a logger for us.
     if logger is None:
         logger = root_logger.for_subsystem('track.carrier_and_code')
+        logger.debug('user_track_parcel',
+                     f'User {logged_username()} trying to track parcel '
+                     f'{carrier_id} {code}')
 
     # Get the requested carrier if not provided.
     if carrier is None:
         carrier = carriers.from_id(carrier_id)
         if carrier is None:
+            logger.warning('carrier_invalid',
+                           f'User {logged_username()} passed an invalid '
+                           f'carrier ID: {carrier_id}')
             raise TitledException(
                 title='Invalid carrier ID',
                 message='Provided carrier ID does not match any of the available '
@@ -324,11 +330,12 @@ def track(carrier_id: str, code: str, force: bool = False,
                     last_updated=datetime.datetime.fromisoformat(row[5]),
                     parcel_name=carrier.parcel_name,
                     archived=carrier.archived)
-                logger.info(
-                    f'User {logged_username()} requested parcel {carrier.slug} '
-                    f'({carrier.db_id}) and is being served a cached version '
-                    f'since it is {carrier.created_delta().total_seconds()} '
-                    'secs old.')
+                logger.info('parcel_cached',
+                            f'User {logged_username()} requested parcel '
+                            f'{carrier.slug} ({carrier.db_id}) and is being '
+                            'served a cached version since it is '
+                            f'{carrier.created_delta().total_seconds()} secs '
+                            f'old.')
                 return carrier.get_resp_dict()
 
             # Store the parcel ID.
@@ -343,7 +350,7 @@ def track(carrier_id: str, code: str, force: bool = False,
         now = datetime.datetime.now(datetime.UTC)
 
         # Log the time it took to fetch the parcel.
-        logger.info(f'Parcel {carrier_id} {code} fetched in '
+        logger.info('parcel_fetch', f'Parcel {carrier_id} {code} fetched in '
                     f'{(now - prefetch_now).total_seconds()} seconds using '
                     f'proxy {carrier.proxy}')
 
@@ -357,8 +364,9 @@ def track(carrier_id: str, code: str, force: bool = False,
                 (carrier_id, code, now.isoformat(), carrier.generate_slug()))
             conn.commit()
             carrier.set_parcel_id(cur.lastrowid)
-            logger.info(f'New parcel {carrier.slug} ({carrier.db_id}) added to '
-                        'the system.', {'context': carrier.as_dict()})
+            logger.info('parcel_new', f'New parcel {carrier.slug} '
+                                      f'({carrier.db_id}) added to the system.',
+                        {'context': carrier.as_dict()})
 
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
@@ -366,7 +374,8 @@ def track(carrier_id: str, code: str, force: bool = False,
                     (carrier.db_id, now.isoformat(), json.dumps(data)))
         conn.commit()
         cur.close()
-        logger.info(f'Updated tracking history for parcel {carrier.slug} '
+        logger.info('parcel_history_new',
+                    f'Updated tracking history for parcel {carrier.slug} '
                     f'({carrier.db_id}) by {logged_username()}.')
 
         # Send tracking history to the client.
@@ -384,6 +393,9 @@ def track_id(parcel_slug: str, force: bool = False):
 
     # Get a logger for us.
     logger = root_logger.for_subsystem('track.slug')
+    logger.debug('user_track_parcel',
+                 f'User {logged_username()} trying to track a parcel using '
+                 f'slug {parcel_slug}')
 
     # TODO: Sanitize parcel slug.
 
@@ -405,7 +417,8 @@ def track_id(parcel_slug: str, force: bool = False):
     row = cur.fetchone()
     cur.close()
     if row is None:
-        logger.info(f'User {logged_username()} tried to track a parcel using '
+        logger.info('slug_invalid',
+                    f'User {logged_username()} tried to track a parcel using '
                     f'an invalid slug ({parcel_slug}).')
         raise TitledException(
             title='Invalid parcel',
@@ -431,7 +444,8 @@ def track_id(parcel_slug: str, force: bool = False):
             status_log = 'outdated'
         else:
             status_log = f'{carrier.created_delta().total_seconds()} secs old'
-        logger.info(f'User {logged_username()} requested parcel {carrier.slug} '
+        logger.info('parcel_cached',
+                    f'User {logged_username()} requested parcel {carrier.slug} '
                     f'({carrier.db_id}) and is being served a cached version '
                     f'since it is {status_log}.')
 
@@ -504,7 +518,7 @@ def register():
     conn.commit()
     cur.close()
 
-    logger.info(f'New user registered: {username}')
+    logger.info('user_new', f'New user registered: {username}')
     return {
         'title': 'Registration successful',
         'message': 'User was successfully registered.'
@@ -550,7 +564,8 @@ def create_auth_token(description: str = None, username: str = None,
     conn.commit()
     cur.close()
 
-    logger.info(f'New authentication token generated for {logged_username()}')
+    logger.info('auth_token_new',
+                f'New authentication token generated for {logged_username()}')
     return {
         'description': description,
         'token': auth_token
@@ -593,8 +608,8 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
     conn.commit()
     cur.close()
 
-    logger.info(f'User {logged_username()} revoked authentication token ' +
-                revoke_token)
+    logger.info('auth_token_revoked', f'User {logged_username()} revoked '
+                                      f'authentication token {revoke_token}')
     return {
         'title': 'Authentication token revoked',
         'message': f'The authentication token for {row[0]} has been '
@@ -689,7 +704,8 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
         conn.commit()
         cur.close()
 
-        logger.info(f'User {logged_username()} removed parcel {parcel_slug} '
+        logger.info('user_parcel_removed',
+                    f'User {logged_username()} removed parcel {parcel_slug} '
                     f'({parcel_id}) from its tracking list')
         return {
             'title': 'Removed from saved list',
@@ -726,7 +742,8 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     conn.commit()
     cur.close()
 
-    logger.info(f'User {logged_username()} added parcel {parcel_slug} '
+    logger.info('user_parcel_saved',
+                f'User {logged_username()} added parcel {parcel_slug} '
                 f'({parcel_id}) to its tracking list')
     return {
         'title': 'Parcel saved',
@@ -789,14 +806,16 @@ def archive_flag_parcel(parcel_slug: str):
 
     # Respond with a pretty message.
     if request.method == 'POST':
-        logger.info(f'User {logged_username()} archived parcel {parcel_slug} '
+        logger.info('user_parcel_archived',
+                    f'User {logged_username()} archived parcel {parcel_slug} '
                     f'({parcel_id})')
         return {
             'title': 'Parcel archived',
             'message': f'{name} has been archived successfully.'
         }
     else:
-        logger.info(f'User {logged_username()} unarchived parcel {parcel_slug} '
+        logger.info('user_parcel_unarchived',
+                    f'User {logged_username()} unarchived parcel {parcel_slug} '
                     f'({parcel_id})')
         return {
             'title': 'Parcel unarchived',

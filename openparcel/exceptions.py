@@ -21,13 +21,13 @@ class TitledException(Exception):
         self.status_code = status_code
         self.logger = logger
 
-    def log(self, level: int, context: dict = None):
+    def log(self, level: int, action_id: str, context: dict = None):
         """Logs the occurrence of this exception."""
         if self.logger is None:
             raise LoggerNotFound
 
-        self.logger.log(level, f'{self.title}: {self.message}',
-                        context=context)
+        self.logger.log(level, action_id,
+                        f'{self.title}: {self.message}', context=context)
 
     def resp_dict(self) -> dict:
         """Returns the equivalent response dictionary for the web service."""
@@ -115,7 +115,7 @@ class ScrapingBrowserError(TitledException):
         self.data: dict = carrier.as_dict()
 
         # Log the incident.
-        self.log(logging.ERROR, {
+        self.log(logging.ERROR, 'scrape_error', {
             'context': carrier.as_dict(),
             'traceback': self.trace
         })
