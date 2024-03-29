@@ -69,12 +69,16 @@ def is_authenticated() -> bool:
     return 'user_id' in g
 
 
-def authenticate(username: str, password: str = None,
-                 auth_token: str = None) -> Optional[int]:
+def authenticate(username: str, password: str = None, auth_token: str = None,
+                 logger: Logger = None) -> Optional[int]:
     """Authenticates the user based on the provided credentials."""
     # Check if we have cached the user ID.
     if 'user_id' in g:
         return g.user_id
+
+    # Get a logger for us.
+    if logger is None:
+        logger = root_logger.for_subsystem('auth')
 
     # Perform a bunch of sanity checks.
     if username is None and password is None and auth_token is None:
@@ -109,17 +113,19 @@ def authenticate(username: str, password: str = None,
     cur.execute('SELECT salt FROM users WHERE username = ?', (username,))
     row = cur.fetchone()
     if row is None:
+        logger.info('auth_failed_username',
+                    'User authentication failed due to a wrong username being '
+                    f'provided: {username}')
         raise AuthenticationFailed(
             title='Invalid username',
-            message='Username is not in our database. Maybe you have misspelt '
-                    'it?',
+            message='Username is not in our database. Maybe you have'
+                    'misspelled it?',
             status_code=401)
     salt = bytes.fromhex(row[0])
     cur.close()
 
     # Check the credentials against the database.
     cur = conn.cursor()
-    row = None
     if password is not None:
         # Authenticate using a password.
         password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
@@ -128,6 +134,9 @@ def authenticate(username: str, password: str = None,
                     '(password = ?)', (username, password_hash.hex()))
         row = cur.fetchone()
         if row is None:
+            logger.info('auth_failed_password',
+                        f'User {username} authentication failed due to a wrong '
+                        'password.')
             raise AuthenticationFailed(
                 title='Wrong password',
                 message='Credentials did not match any users in our database. '
@@ -142,6 +151,9 @@ def authenticate(username: str, password: str = None,
                     (auth_token, username))
         row = cur.fetchone()
         if row is None:
+            logger.info('auth_failed_token',
+                        f'User {username} authentication failed due to a wrong '
+                        f'authentication token: {auth_token}')
             raise AuthenticationFailed(
                 title='Wrong authentication token',
                 message='Credentials did not match anything in our database. '
@@ -157,7 +169,8 @@ def authenticate(username: str, password: str = None,
     return g.user_id
 
 
-def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
+def http_authenticate(use_secrets: str | tuple[str, ...],
+                      logger: Logger = None) -> Optional[int]:
     """Authentication workflow for an HTTP request."""
     # Check if we have cached the user ID.
     if 'user_id' in g:
@@ -166,6 +179,10 @@ def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     # Ensure we build a tuple if a single string was passed for secrets.
     if type(use_secrets) is str:
         use_secrets = (use_secrets,)
+
+    # Get a logger for us.
+    if logger is None:
+        logger = root_logger.for_subsystem('auth.http')
 
     # Check if we have the authentication key to work with.
     auth_key = request.args.get('auth')
@@ -183,6 +200,8 @@ def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     # Break down the authentication key and perform some general checks.
     auth_key = auth_key.split(':')
     if len(auth_key) != 2 or not auth_key[0].strip() or not auth_key[1].strip():
+        logger.info('auth_key_invalid', 'Authentication failed due to an '
+                                        'invalid authentication key.')
         raise AuthenticationFailed(
             title='Invalid authentication key',
             message='Format of the provided authentication key is not valid.',
@@ -194,12 +213,12 @@ def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     err = None
     if 'password' in use_secrets:
         try:
-            return authenticate(username, password=secret)
+            return authenticate(username, password=secret, logger=logger)
         except TitledException as e:
             err = e
     if 'auth_token' in use_secrets:
         try:
-            return authenticate(username, auth_token=secret)
+            return authenticate(username, auth_token=secret, logger=logger)
         except TitledException as e:
             err = e
 
@@ -246,12 +265,14 @@ def ping_pong():
 def track(carrier_id: str, code: str, force: bool = False,
           carrier: BaseCarrier = None, logger: Logger = None):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
-    # Check if we are authorized.
-    http_authenticate('auth_token')
-
     # Get a logger for us.
-    if logger is None:
+    is_new_logger = logger is None
+    if is_new_logger:
         logger = root_logger.for_subsystem('track.carrier_and_code')
+
+    # Check if we are authorized.
+    http_authenticate('auth_token', logger=logger)
+    if is_new_logger:
         logger.debug('user_track_parcel',
                      f'User {logged_username()} trying to track parcel '
                      f'{carrier_id} {code}')
@@ -388,11 +409,11 @@ def track(carrier_id: str, code: str, force: bool = False,
 @app.route('/track/<parcel_slug>')
 def track_id(parcel_slug: str, force: bool = False):
     """Tracks the history of a parcel given a parcel ID."""
-    # Check if we are authorized.
-    http_authenticate('auth_token')
-
     # Get a logger for us.
     logger = root_logger.for_subsystem('track.slug')
+
+    # Check if we are authorized.
+    http_authenticate('auth_token', logger=logger)
     logger.debug('user_track_parcel',
                  f'User {logged_username()} trying to track a parcel using '
                  f'slug {parcel_slug}')
@@ -463,7 +484,7 @@ def register():
     password = request.form['password']
 
     # Get a logger for us.
-    logger = root_logger.for_subsystem('register')
+    logger = root_logger.for_subsystem('user_register')
 
     # Check if we are accepting registrations.
     if not app.config['ALLOW_REGISTRATION']:
@@ -529,14 +550,14 @@ def register():
 def create_auth_token(description: str = None, username: str = None,
                       password: str = None):
     """Creates a new authentication token for a user."""
-    # Authenticate using the username and password first.
-    if username is None:
-        http_authenticate('password')
-    else:
-        authenticate(username, password)
-
     # Get a logger for us.
     logger = root_logger.for_subsystem('auth_token.new')
+
+    # Authenticate using the username and password first.
+    if username is None:
+        http_authenticate('password', logger=logger)
+    else:
+        authenticate(username, password, logger=logger)
 
     # Get the description.
     if description is None:
@@ -576,13 +597,13 @@ def create_auth_token(description: str = None, username: str = None,
 def revoke_auth_token(revoke_token: str = None, username: str = None,
                       password: str = None, auth_token: str = None):
     """Revokes an authentication token of a user."""
-    if username is None:
-        http_authenticate(('password', 'auth_token'))
-    else:
-        authenticate(username, password, auth_token)
-
     # Get a logger for us.
     logger = root_logger.for_subsystem('auth_token.revoke')
+
+    if username is None:
+        http_authenticate(('password', 'auth_token'), logger=logger)
+    else:
+        authenticate(username, password, auth_token, logger=logger)
 
     # Check if the authentication token to revoke actually exists.
     conn = connect_db()
@@ -620,11 +641,11 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
 @app.route('/save/<carrier_id>/<code>', methods=['POST', 'DELETE'])
 def save_parcel(carrier_id: str, code: str, archived: bool = False):
     """Stores a parcel into the user's tracked parcels list."""
-    # Check if we are authorized.
-    http_authenticate('auth_token')
-
     # Get a logger for us.
     logger = root_logger.for_subsystem('parcel_save.carrier_and_code')
+
+    # Check if we are authorized.
+    http_authenticate('auth_token', logger=logger)
 
     # TODO: Sanitize parcel slug.
 
@@ -660,12 +681,12 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     if name is None:
         name = request.form.get('name') or None
 
-    # Check if we are authorized.
-    http_authenticate('auth_token')
-
     # Get a logger for us.
     if logger is None:
         logger = root_logger.for_subsystem('parcel_save.slug')
+
+    # Check if we are authorized.
+    http_authenticate('auth_token', logger=logger)
 
     # TODO: Sanitize parcel slug.
 
@@ -755,11 +776,11 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
 @app.route('/archive/<parcel_slug>', methods=['POST', 'DELETE'])
 def archive_flag_parcel(parcel_slug: str):
     """Marks a saved parcel as archived or not."""
-    # Check if we are authorized.
-    http_authenticate('auth_token')
-
     # Get a logger for us.
     logger = root_logger.for_subsystem('parcel_archive.slug')
+
+    # Check if we are authorized.
+    http_authenticate('auth_token', logger=logger)
 
     # TODO: Sanitize parcel slug.
 
@@ -830,8 +851,11 @@ def list_parcels():
         'parcels': []
     }
 
+    # Get a logger for us.
+    logger = root_logger.for_subsystem('parcel_list')
+
     # Check if we are authorized.
-    http_authenticate('auth_token')
+    http_authenticate('auth_token', logger=logger)
 
     # Get the list from the database.
     conn = connect_db()
