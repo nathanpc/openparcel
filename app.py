@@ -240,6 +240,29 @@ def logged_username() -> Optional[str]:
     return g.username if is_authenticated() else None
 
 
+def log_http_request(logger: Logger):
+    """Logs everything about an HTTP request."""
+    context = {
+        'method': request.method,
+        'full_path': request.full_path,
+        'path': request.path,
+        'query_string': request.query_string.decode(),
+        'args': request.args,
+        'headers': dict(request.headers),
+        'form': request.form,
+        'remote_addr': request.remote_addr
+    }
+
+    # Remove sensitive information from the context.
+    if 'X-Auth-Token' in context['headers']:
+        context['headers']['X-Auth-Token'] = '<Withheld for security reasons>'
+
+    # Log the request.
+    logger.debug('request',
+                 f'{request.method} {request.path} [{request.remote_addr}]',
+                 context=context)
+
+
 def should_refresh_parcel(parcel: BaseCarrier, timediff: float,
                           force: bool = False) -> bool:
     """Checks if a parcel tracking history is old enough to have timed out."""
@@ -269,6 +292,7 @@ def track(carrier_id: str, code: str, force: bool = False,
     is_new_logger = logger is None
     if is_new_logger:
         logger = root_logger.for_subsystem('track.carrier_and_code')
+        log_http_request(logger)
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
@@ -411,6 +435,7 @@ def track_id(parcel_slug: str, force: bool = False):
     """Tracks the history of a parcel given a parcel ID."""
     # Get a logger for us.
     logger = root_logger.for_subsystem('track.slug')
+    log_http_request(logger)
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
@@ -485,6 +510,7 @@ def register():
 
     # Get a logger for us.
     logger = root_logger.for_subsystem('user_register')
+    log_http_request(logger)
 
     # Check if we are accepting registrations.
     if not app.config['ALLOW_REGISTRATION']:
@@ -552,6 +578,7 @@ def create_auth_token(description: str = None, username: str = None,
     """Creates a new authentication token for a user."""
     # Get a logger for us.
     logger = root_logger.for_subsystem('auth_token.new')
+    log_http_request(logger)
 
     # Authenticate using the username and password first.
     if username is None:
@@ -599,6 +626,7 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
     """Revokes an authentication token of a user."""
     # Get a logger for us.
     logger = root_logger.for_subsystem('auth_token.revoke')
+    log_http_request(logger)
 
     if username is None:
         http_authenticate(('password', 'auth_token'), logger=logger)
@@ -643,6 +671,7 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
     """Stores a parcel into the user's tracked parcels list."""
     # Get a logger for us.
     logger = root_logger.for_subsystem('parcel_save.carrier_and_code')
+    log_http_request(logger)
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
@@ -684,6 +713,7 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     # Get a logger for us.
     if logger is None:
         logger = root_logger.for_subsystem('parcel_save.slug')
+        log_http_request(logger)
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
@@ -778,6 +808,7 @@ def archive_flag_parcel(parcel_slug: str):
     """Marks a saved parcel as archived or not."""
     # Get a logger for us.
     logger = root_logger.for_subsystem('parcel_archive.slug')
+    log_http_request(logger)
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
@@ -853,6 +884,7 @@ def list_parcels():
 
     # Get a logger for us.
     logger = root_logger.for_subsystem('parcel_list')
+    log_http_request(logger)
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
