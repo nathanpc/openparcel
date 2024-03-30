@@ -5,324 +5,54 @@
  * @author Nathan Campos <nathan@innoveworkshop.com>
  */
 
-"use strict";
+/**
+ * The main scraper and utility class of the project. Every carrier that is
+ * implemented must inherit from this class.
+ */
+class OpenParcel {
+	/**
+	 * Constructs the scraper utility object.
+	 */
+	constructor() {
+		this.parcel = new Parcel();
+	}
 
-window.OpenParcel = {
-	data: {
-		/**
-		 * Creates a brand new data object.
-		 *
-		 * @returns {{trackingUrl: string, origin: {country: string|null,
-		 *           city: string|null, postalCode: string|null,
-		 *           state: string|null, addressLine: string|null,
-		 *           coords: {lat: Number|null, lng: Number|null}}|null,
-		 *           destination: {country: string|null, city: string|null,
-		 *           postalCode: string|null, state: string|null,
-		 *           addressLine: string|null, coords: {lat: Number|null,
-		 *           lng: Number|null}}|null, trackingCode: string,
-		 *           history: *[], creationDate: string,
-		 *           status: {data: {description: string}, type: string}}}
-		 */
-		create() {
-			return {
-				trackingCode: null,
-				trackingUrl: window.location.href,
-				creationDate: null,
-				status: null,
-				origin: null,
-				destination: null,
-				history: []
-			};
-		},
+	/**
+	 * Scrapes the page for all the information about the parcel and its
+	 * tracking history.
+	 *
+	 * @warning This method must be overwritten by the scraper script.
+	 *
+	 * @returns {Parcel | ParcelError} The parcel object with all the scraped
+	 * information or an error object in case the proper stuff couldn't be
+	 * found.
+	 */
+	scrape() {
+		throw Error("scrape() method wasn't implemented for this carrier");
+	}
 
-		/**
-		 * Creates a brand new tracking history update object.
-		 *
-		 * @param {string}      title       Very brief description.
-		 * @param {string|null} description Detailed description.
-		 * @param               [info]      Optional properties of the object.
-		 *
-		 * @returns {{description: string|null, location: {country: string|null,
-		 *           city: string|null, postalCode: string|null,
-		 *           state: string|null, addressLine: string|null,
-		 *           coords: {lat: Number|null, lng: Number|null}},
-		 *           title: string, timestamp: string, status: null}}
-		 *          OpenParcel tracking history update object.
-		 */
-		createUpdate(title, description, info) {
-			const update = {
-				title: title,
-				description: description,
-				location: null,
-				timestamp: null,
-				status: null
-			};
-
-			// Set some of the properties.
-			if (info !== undefined) {
-				Object.keys(info).forEach(function (key) {
-					update[key] = info[key];
-				});
-			}
-
-			return update;
-		},
-
-		/**
-		 * Creates a brand new data status object.
-		 *
-		 * @param {string} type        Status type.
-		 * @param {string} description Brief description.
-		 * @param          [data]      Additional data fields.
-		 *
-		 * @returns {{type: string, data: {description: string}}}
-		 *          OpenParcel data status object.
-		 */
-		createStatus(type, description, data) {
-			const status = {
-				type: type,
-				data: {
-					description: description
-				}
-			};
-
-			// Append additional data.
-			if (data !== undefined) {
-				Object.keys(data).forEach(function (key) {
-					status.data[key] = data[key];
-				});
-			}
-
-			return status;
-		},
-
-		/**
-		 * Creates a brand new address object.
-		 *
-		 * @param [info] Information to be populated into the address object.
-		 *
-		 * @returns {{country: string|null, city: string|null,
-		 *           postalCode: string|null, state: string|null,
-		 *           addressLine: string|null, coords: {lat: Number|null,
-		 *           lng: Number|null}}}
-		 *          OpenParcel address object.
-		 */
-		createAddress(info) {
-			const address = {
-				addressLine: null,
-				city: null,
-				state: null,
-				postalCode: null,
-				country: null,
-				searchQuery: null,
-				coords: {
-					lat: null,
-					lng: null
-				}
-			};
-
-			// Set some of the properties.
-			if (info !== undefined) {
-				Object.keys(info).forEach(function (key) {
-					address[key] = info[key];
-				});
-			}
-
-			return address;
-		},
-
-		/**
-		 * Applies some final touches to the data object before it's returned to
-		 * the server.
-		 *
-		 * @param           data        OpenParcel data object to be treated.
-		 * @param {boolean} [forceSort] Should we forcefully sort the history?
-		 *
-		 * @return Properly prepared OpenParcel data object for the server.
-		 */
-		finalTouches(data, forceSort) {
-			if ((forceSort !== undefined) && forceSort) {
-				// Ensure the history is ordered from newest to oldest.
-				data.history.sort(function (a, b) {
-					return (new Date(b.timestamp).getTime()) -
-						(new Date(a.timestamp).getTime());
-				});
-			}
-
-			// Fix addresses in the data object.
-			OpenParcel.data.fixAddress(data.origin);
-			OpenParcel.data.fixAddress(data.destination);
-			data.history.forEach(function (update) {
-				OpenParcel.data.fixAddress(update.location);
-			});
-
-			return data;
-		},
-
-		/**
-		 * Builds the query string for an address object and fixes any
-		 * abnormalities.
-		 *
-		 * @param {{country: string|null, city: string|null,
-		 *         postalCode: string|null, state: string|null,
-		 *         addressLine: string|null, coords: {lat: Number|null,
-		 *         lng: Number|null}, queryString: string|null}} address
-		 */
-		fixAddress (address) {
-			if (address === null)
-				return;
-
-			// Build the search query string based on geo coordinates.
-			if ((address.coords.lat !== null) && (address.coords.lng !== null)) {
-				address.searchQuery = address.coords.lat + ", " +
-					address.coords.lng;
-				return;
-			}
-
-			// Build the search query string based on bits of the address.
-			address.searchQuery = " " + address.addressLine + "  " +
-				address.city + "  " + address.state + "  " +
-				address.postalCode + "  " + address.country + " ";
-			address.searchQuery = address.searchQuery.replace(/\snull\s/g, " ");
-			address.searchQuery = address.searchQuery.replace(/\s{2,}/g, " ");
-			address.searchQuery = address.searchQuery.trim();
-			if (address.searchQuery.length <= 1)
-				address.searchQuery = null;
-		}
-	},
-
-	error: {
-		codes: {
-			Unknown: {
-				id: 0,
-				name: "Unknown"
-			},
-			InvalidTrackingCode: {
-				id: 1,
-				name: "InvalidTrackingCode"
-			},
-			ParcelNotFound: {
-				id: 2,
-				name: "ParcelNotFound"
-			},
-			RateLimiting: {
-				id: 3,
-				name: "RateLimiting"
-			},
-			Blocked: {
-				id: 4,
-				name: "Blocked"
-			}
-		},
-
-		/**
-		 * Generates a standard error object.
-		 *
-		 * @param {{id: number, name: string}} code   Error code description object.
-		 * @param {any}                        [data] Extra data to be included.
-		 *
-		 * @returns {{error: {code: {id: number, name: string}, data: (*|null)}}}
-		 */
-		create(code, data) {
-			return {
-				error: {
-					code: code,
-					data: (data !== undefined) ? data : null
-				}
-			}
-		}
-	},
-
-	calendar: {
-		getMonth(monthName) {
-			switch (monthName) {
-				case 'Jan':
-				case 'January':
-					return 0;
-				case 'Feb':
-				case 'February':
-					return 1;
-				case 'Mar':
-				case 'March':
-					return 2;
-				case 'Apr':
-				case 'April':
-					return 3;
-				case 'May':
-					return 4;
-				case 'Jun':
-				case 'June':
-					return 5;
-				case 'Jul':
-				case 'July':
-					return 6;
-				case 'Aug':
-				case 'August':
-					return 7;
-				case 'Sep':
-				case 'September':
-					return 8;
-				case 'Oct':
-				case 'October':
-					return 9;
-				case 'Nov':
-				case 'November':
-					return 10;
-				case 'Dec':
-				case 'December':
-					return 11;
-			}
-		},
-		getMonthPT(monthName) {
-			switch (monthName) {
-				case 'Jan':
-				case 'Janeiro':
-					return 0;
-				case 'Fev':
-				case 'Fevereiro':
-					return 1;
-				case 'Mar':
-				case 'Março':
-					return 2;
-				case 'Abr':
-				case 'Abril':
-					return 3;
-				case 'Mai':
-				case 'Maio':
-					return 4;
-				case 'Jun':
-				case 'Junho':
-					return 5;
-				case 'Jul':
-				case 'Julho':
-					return 6;
-				case 'Ago':
-				case 'Agosto':
-					return 7;
-				case 'Set':
-				case 'Setembro':
-					return 8;
-				case 'Out':
-				case 'Outubro':
-					return 9;
-				case 'Nov':
-				case 'Novembro':
-					return 10;
-				case 'Dez':
-				case 'Dezembro':
-					return 11;
-			}
-		}
-	},
+	/**
+	 * Scrapes the page for error messages and turns them into an object if they
+	 * exist.
+	 *
+	 * @warning This method must be overwritten by the scraper script.
+	 *
+	 * @returns {ParcelError | null} Error object in case of a scraped message
+	 * or null if no errors were found on the page.
+	 */
+	errorCheck() {
+		throw Error("errorCheck() method wasn't implemented for this carrier");
+	}
 
 	/**
 	 * Logs a message to our debugging log window in the web page. This is meant
 	 * to assist us when we don't have access to the Developer Tools pane.
 	 *
-	 * @param obj {Object|String} Object or message to be logged.
-	 * @param [newLine] {Boolean} Should we append a new line to the message?
+	 * @param {Object | String} obj       Object or message to be logged.
+	 * @param {Boolean}         [newLine] Should we append a new line to the
+	 *                                    message?
 	 */
-	debugLog(obj, newLine = true) {
+	static debugLog(obj, newLine = true) {
 		// Check if our debug window is currently present.
 		if (document.getElementById("openparcel-debugger") === null) {
 			// Create the window.
@@ -345,7 +75,7 @@ window.OpenParcel = {
 		}
 
 		// Create the message to be logged.
-		let msg = "";
+		let msg;
 		if (typeof obj === 'string' || obj instanceof String) {
 			// It's just a string.
 			msg = obj;
@@ -360,9 +90,15 @@ window.OpenParcel = {
 			msg += "\n";
 		console.value += msg;
 		console.scrollTop = 99999;
-	},
+	}
 
-	dropTokenElement() {
+	/**
+	 * Drops (if needed) a token element in the page that can be used to check
+	 * for major rewrites to the DOM in certain areas.
+	 *
+	 * @returns {HTMLDivElement} Our token element.
+	 */
+	static dropTokenElement() {
 		// Get the token element.
 		let elem = document.getElementById("op-token-elem");
 
@@ -376,14 +112,15 @@ window.OpenParcel = {
 		}
 
 		return elem;
-	},
+	}
 
 	/**
-	 * Notifies the engine that an element has finally been loaded into the page.
+	 * Notifies the engine that an element has finally been loaded into the page
+	 * by issuing an alert dialog box.
 	 *
-	 * @param selectors {Array<String>} Query selectors for elements to wait for.
+	 * @param {Array<String>} selectors Query selectors for elements to wait for.
 	 */
-	notifyElementLoaded(selectors) {
+	static notifyElementLoaded(selectors) {
 		const observers = [];
 
 		// Drop a token element to test for redirects or rewrites.
@@ -485,4 +222,471 @@ window.OpenParcel = {
 		// Check if any of the elements are already in the document.
 		checkForElements();
 	}
-};
+}
+
+/**
+ * Abstraction of a parcel with all of its information and tracking history.
+ */
+class Parcel {
+	/**
+	 * Constructs the main parcel object for our API to return.
+	 *
+	 * @param {string}              trackingCode Parcel tracking code.
+	 * @param {string}              trackingUrl  URL used to track this parcel.
+	 * @param {ParcelTimestamp}     creationDate Date the parcel was created by the carrier.
+	 * @param {ParcelLocation}      origin       Origin location of the parcel.
+	 * @param {ParcelLocation}      destination  Final destination of the parcel.
+	 * @param {Array<ParcelUpdate>} history      Parcel tracking history.
+	 */
+	constructor(trackingCode = null, trackingUrl = window.location.href,
+	            creationDate = null, origin = null, destination = null,
+	            history = []) {
+		this.trackingCode = trackingCode;
+		this.trackingUrl = trackingUrl;
+		this.creationDate = creationDate;
+		this.origin = origin;
+		this.destination = destination;
+		this.history = history;
+	}
+
+	/**
+	 * Appends an older tracking history update item to the parcel history.
+	 * Remember that the parcel history should be sorted by "newest first".
+	 *
+	 * @param {ParcelUpdate} update Older tracking history update item.
+	 *
+	 * @return New length of the history array.
+	 */
+	appendUpdate(update) {
+		return this.history.push(update);
+	}
+
+	/**
+	 * Creates a JSON representation of the object.
+	 *
+	 * @return JSON JSON representation of the object.
+	 */
+	toJSON() {
+		const json = {
+			trackingCode: this.trackingCode,
+			trackingUrl: this.trackingUrl,
+			creationDate: this.creationDate?.toString() ?? null,
+			status: null,
+			origin: this.origin?.toJSON() ?? null,
+			destination: this.destination?.toJSON() ?? null,
+			history: []
+		}
+
+		// Set the current delivery status.
+		if (this.history.length > 0)
+			json.status = this.history[0].status.toJSON();
+
+		// Populate the tracking history.
+		for (const item of this.history)
+			json.history.push(item.toJSON());
+
+		return json;
+	}
+}
+
+/**
+ * Represents an update in the tracking history. Think of this as an item in the
+ * timeline.
+ */
+class ParcelUpdate {
+	/**
+	 * Constructs a new tracking history update item.
+	 *
+	 * @param {string}          title         Main title of the update.
+	 * @param {string}          [description] Detailed description of the update.
+	 * @param {ParcelLocation}  [location]    Where the update occurred.
+	 * @param {ParcelTimestamp} [timestamp]   When the update occurred.
+	 * @param {ParcelStatus}    [status]      Additional and indexed information.
+	 */
+	constructor(title, description = null, location = null, timestamp = null,
+	            status = null) {
+		this.title = title;
+		this.description = description;
+		this.location = location;
+		this.timestamp = timestamp;
+		this.status = status;
+	}
+
+	/**
+	 * Sets the update item timestamp.
+	 *
+	 * @param {Date} date Timestamp's date.
+	 */
+	setTimestamp(date) {
+		this.timestamp = new ParcelTimestamp(date);
+	}
+
+	/**
+	 * Creates a JSON representation of the object.
+	 *
+	 * @return JSON JSON representation of the object.
+	 */
+	toJSON() {
+		return {
+			title: this.title,
+			description: this.description,
+			location: this.location?.toJSON() ?? null,
+			timestamp: this.timestamp?.toString() ?? null,
+			status: this.status?.toJSON() ?? null
+		};
+	}
+}
+
+/**
+ * Provides additional and indexable information about a parcel update.
+ */
+class ParcelStatus {
+	/**
+	 * Parcel status type enum.
+	 */
+	static Type = {
+		Created: "created",
+		Posted: "posted",
+		InTransit: "in-transit",
+		CustomsCleared: "customs-cleared",
+		DeliveryAttempt: "delivery-attempt",
+		WaitingPickup: "pickup",
+		Delivering: "delivering",
+		Delivered: "delivered",
+		Issue: "issue"
+	};
+
+	/**
+	 * Constructs a new parcel status object.
+	 *
+	 * @param {Type}   type        Type of update status.
+	 * @param {string} description Detailed description of this status.
+	 * @param          [data]      Additional data/context.
+	 */
+	constructor(type, description, data = null) {
+		this.type = type;
+		this.description = description;
+		this.data = data;
+
+		// Ensure we have the required parameters for each status type.
+		this.checkDataValid();
+	}
+
+	/**
+	 * Checks if {@link data} contains all the required parameters given the
+	 * type of the status.
+	 */
+	checkDataValid() {
+		const base = this;
+
+		// Checks if the data object has the required keys.
+		const hasKeys = function (keys) {
+			const errorString = `Parcel status ${base.type} does not contain ` +
+				`some or any of the required keys: ${keys.join(", ")}`;
+
+			// Check if we have nothing.
+			if (base.data === null)
+				throw Error(errorString);
+
+			// Check if we have all the required keys.
+			if (!Object.keys(base.data).every(key => keys.includes(key)))
+				throw Error(errorString);
+		};
+
+		// Perform the checks based on the status type.
+		switch (this.type) {
+			case ParcelStatus.Type.Created:
+				hasKeys(["timestamp"]);
+				break;
+			case ParcelStatus.Type.WaitingPickup:
+				hasKeys(["location", "until"]);
+				break;
+			case ParcelStatus.Type.Delivered:
+				hasKeys(["to"]);
+				break;
+		}
+	}
+
+	/**
+	 * Creates a JSON representation of the object.
+	 *
+	 * @return JSON JSON representation of the object.
+	 */
+	toJSON() {
+		const json = {
+			type: this.type,
+			data: {
+				description: this.description
+			}
+		}
+
+		if (this.data !== null) {
+			for (const key of Object.keys(this.data))
+				json.data[key] = this.data[key];
+		}
+
+		return json;
+	}
+}
+
+/**
+ * Worldwide location abstraction class.
+ */
+class ParcelLocation {
+	/**
+	 * Constructs a location object.
+	 *
+	 * @param {string} [addressLine] Address line of the location.
+	 * @param {string} [city]        City.
+	 * @param {string} [state]       State or district.
+	 * @param {string} [postalCode]  Postal code.
+	 * @param {string} [country]     Country.
+	 */
+	constructor(addressLine = null, city = null, state = null,
+	            postalCode = null, country = null) {
+		this.addressLine = addressLine;
+		this.city = city;
+		this.state = state;
+		this.postalCode = postalCode;
+		this.country = country;
+		this.coords = {
+			lat: null,
+			lng: null
+		};
+	}
+
+	/**
+	 * Sets the location coordinates.
+	 *
+	 * @param lat Latitude value.
+	 * @param lng Longitude value.
+	 *
+	 * @returns {ParcelLocation} The object itself for functional purposes.
+	 */
+	setCoords(lat, lng) {
+		this.coords.lat = lat;
+		this.coords.lng = lng;
+		return this;
+	}
+
+	/**
+	 * Creates a JSON representation of the object.
+	 *
+	 * @return JSON JSON representation of the object.
+	 */
+	toJSON() {
+		const address = {
+			addressLine: this.addressLine,
+			city: this.city,
+			state: this.state,
+			postalCode: this.postalCode,
+			country: this.country,
+			searchQuery: null,
+			coords: {
+				lat: this.coords.lat,
+				lng: this.coords.lng
+			}
+		};
+
+		// Build the search query string.
+		if ((address.coords.lat !== null) && (address.coords.lng !== null)) {
+			// Based on geo coordinates.
+			address.searchQuery = address.coords.lat + ", " +
+				address.coords.lng;
+		} else {
+			// Based on bits of the address.
+			address.searchQuery = " " + address.addressLine + "  " +
+				address.city + "  " + address.state + "  " +
+				address.postalCode + "  " + address.country + " ";
+			address.searchQuery = address.searchQuery.replace(/\snull\s/g, " ");
+			address.searchQuery = address.searchQuery.replace(/\s{2,}/g, " ");
+			address.searchQuery = address.searchQuery.trim();
+			if (address.searchQuery.length <= 1)
+				address.searchQuery = null;
+		}
+
+		return address;
+	}
+}
+
+/**
+ * Abstracts away timestamps and how to represent them.
+ */
+class ParcelTimestamp {
+	/**
+	 * Constructs a timestamp abstraction object.
+	 *
+	 * @param {Date} date Date object of the timestamp.
+	 */
+	constructor(date = new Date()) {
+		this.date = date;
+	}
+
+	/**
+	 * Gets a month index based on a month's name. Can also take into account
+	 * the langauge.
+	 *
+	 * @param {string} name Name of the month.
+	 * @param {string} lang Language string: en, pt.
+	 *
+	 * @return {number} Month index.
+	 */
+	static getMonthIndex(name, lang = "en") {
+		if (lang === "en") {
+			// English
+			switch (name) {
+				case 'Jan':
+				case 'January':
+					return 0;
+				case 'Feb':
+				case 'February':
+					return 1;
+				case 'Mar':
+				case 'March':
+					return 2;
+				case 'Apr':
+				case 'April':
+					return 3;
+				case 'May':
+					return 4;
+				case 'Jun':
+				case 'June':
+					return 5;
+				case 'Jul':
+				case 'July':
+					return 6;
+				case 'Aug':
+				case 'August':
+					return 7;
+				case 'Sep':
+				case 'September':
+					return 8;
+				case 'Oct':
+				case 'October':
+					return 9;
+				case 'Nov':
+				case 'November':
+					return 10;
+				case 'Dec':
+				case 'December':
+					return 11;
+				default:
+					throw Error("Invalid english month name: " + name);
+			}
+		} else if (lang === "pt") {
+			// Portuguese
+			switch (name) {
+				case 'Jan':
+				case 'Janeiro':
+					return 0;
+				case 'Fev':
+				case 'Fevereiro':
+					return 1;
+				case 'Mar':
+				case 'Março':
+					return 2;
+				case 'Abr':
+				case 'Abril':
+					return 3;
+				case 'Mai':
+				case 'Maio':
+					return 4;
+				case 'Jun':
+				case 'Junho':
+					return 5;
+				case 'Jul':
+				case 'Julho':
+					return 6;
+				case 'Ago':
+				case 'Agosto':
+					return 7;
+				case 'Set':
+				case 'Setembro':
+					return 8;
+				case 'Out':
+				case 'Outubro':
+					return 9;
+				case 'Nov':
+				case 'Novembro':
+					return 10;
+				case 'Dez':
+				case 'Dezembro':
+					return 11;
+				default:
+					throw Error("Invalid portuguese month name: " + name);
+			}
+		}
+
+		throw Error("Invalid language for parsing month name");
+	}
+
+	/**
+	 * Returns the timestamp in the standardized ISO 8601 format.
+	 *
+	 * @return {string} Timestamp in ISO 8601 format.
+	 */
+	toString() {
+		return this.date.toISOString();
+	}
+}
+
+/**
+ * Error/exception abstraction object for our API.
+ */
+class ParcelError {
+	/**
+	 * Error code enum.
+	 */
+	static Code = {
+		Unknown: {
+			id: 0,
+			name: "Unknown"
+		},
+		InvalidTrackingCode: {
+			id: 1,
+			name: "InvalidTrackingCode"
+		},
+		ParcelNotFound: {
+			id: 2,
+			name: "ParcelNotFound"
+		},
+		RateLimiting: {
+			id: 3,
+			name: "RateLimiting"
+		},
+		Blocked: {
+			id: 4,
+			name: "Blocked"
+		}
+	};
+
+	/**
+	 * Constructs a standard error object.
+	 *
+	 * @param {{name: string, id: number}} code   Error code description object.
+	 * @param {JSON}                       [data] Extra data to be included.
+	 */
+	constructor(code, data= null) {
+		this.code = code;
+		this.data = data;
+	}
+
+	/**
+	 * Creates a JSON representation of the object.
+	 *
+	 * @param {boolean} enclosed Should the returned object be enclosed in an
+	 *                           error key?
+	 *
+	 * @return JSON JSON representation of the object.
+	 */
+	toJSON(enclosed = true) {
+		const json = {
+			error: {
+				code: this.code,
+				data: this.data
+			}
+		}
+
+		return (enclosed) ? json : json.error;
+	}
+}

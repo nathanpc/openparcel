@@ -11,6 +11,7 @@ from string import Template
 from typing import Optional
 
 from DrissionPage import ChromiumPage, ChromiumOptions
+from DrissionPage._elements.none_element import NoneElement
 from DrissionPage.errors import WaitTimeoutError, JavaScriptError
 
 from openparcel.exceptions import (TrackingCodeNotFound, ScrapingJsNotFound,
@@ -177,10 +178,10 @@ class BrowserBaseCarrier(BaseCarrier):
 
         return base
 
-    def _scrape(self, func_name: str = 'scrape'):
+    def _scrape(self, statement: str = 'new Carrier().scrape().toJSON()'):
         # Get the scraped response.
         self.debug_print('Scraping for tracking information...')
-        self._resp_dict = self.page.run_js_loaded(f'{func_name}();',
+        self._resp_dict = self.page.run_js_loaded(statement + ';',
                                                   as_expr=True)
 
         # Check if we caught an error.
@@ -193,7 +194,7 @@ class BrowserBaseCarrier(BaseCarrier):
             self._load_scraping_js()
 
         self.debug_print('Scraping for errors...')
-        self._scrape(func_name='errorCheck')
+        self._scrape(statement='new Carrier().errorCheck()?.toJSON() ?? null')
 
     def _fetch_page(self, timeout: float = 10):
         """Sets up the scraping web browser and begins fetching the carrier's
@@ -225,8 +226,15 @@ class BrowserBaseCarrier(BaseCarrier):
 
     def _load_scraping_js(self):
         """Loads scraping scripts into the page."""
+        # Check if our token element is present.
+        elem = self.page.ele('#op-token-elem', timeout=1)
+        if type(elem) is not NoneElement:
+            return
+
+        # Load the necessary scripts.
         self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
         self.page.run_js_loaded(self._get_scraping_js(), as_expr=True)
+        self.page.run_js_loaded('OpenParcel.dropTokenElement();')
         self.debug_print(
             f'Scraping scripts loaded at {datetime.datetime.now().time()}')
 
@@ -306,6 +314,7 @@ class BrowserBaseCarrier(BaseCarrier):
                            raise_err: bool = True):
         """Waits for a page's title to change to something that contains the
         specified string."""
+        self._load_scraping_js()
         self.debug_print(f'Waiting for page title to change "{contains}"...')
         self.page.wait.title_change(contains, raise_err=raise_err,
                                     timeout=self._timeout(timeout))
