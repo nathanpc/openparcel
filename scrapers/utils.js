@@ -523,6 +523,23 @@ class ParcelTimestamp {
 	}
 
 	/**
+	 * Sets the time of our timestamp according to UTC.
+	 *
+	 * @param {number} hours   New hour of the day.
+	 * @param {number} [min]   New minute of the hour.
+	 * @param {number} [secs]  New second of the minute.
+	 */
+	setTime(hours, min = undefined, secs = undefined) {
+		if (min === undefined) {
+			this.date.setUTCHours(hours);
+		} else if (secs === undefined) {
+			this.date.setUTCHours(hours, min);
+		} else {
+			this.date.setUTCHours(hours, min, secs);
+		}
+	}
+
+	/**
 	 * Gets a month index based on a month's name. Can also take into account
 	 * the langauge.
 	 *
@@ -618,6 +635,20 @@ class ParcelTimestamp {
 		}
 
 		throw Error("Invalid language for parsing month name");
+	}
+
+	/**
+	 * Creates a copy of this object.
+	 *
+	 * @return {ParcelTimestamp} The copy of the object.
+	 */
+	clone() {
+		// Create a copy of our Date object.
+		const dt = new Date();
+		dt.setTime(this.date.getTime());
+
+		// Create the copy of ourselves.
+		return new ParcelTimestamp(dt);
 	}
 
 	/**
