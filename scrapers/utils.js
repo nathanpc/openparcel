@@ -292,7 +292,7 @@ class Parcel {
 		}
 
 		// Set the current delivery status.
-		if (this.history.length > 0)
+		if ((this.history.length > 0) && (this.history[0].status !== null))
 			json.status = this.history[0].status.toJSON();
 
 		// Populate the tracking history.
