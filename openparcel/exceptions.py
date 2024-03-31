@@ -116,6 +116,6 @@ class ScrapingBrowserError(TitledException):
 
         # Log the incident.
         self.log(logging.ERROR, 'scrape_error', {
-            'context': carrier.as_dict(),
+            'context': carrier.as_dict(internals=True),
             'traceback': self.trace
         })

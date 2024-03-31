@@ -119,7 +119,7 @@ class BaseCarrier:
 
         return resp
 
-    def as_dict(self) -> dict:
+    def as_dict(self, internals: bool = False) -> dict:
         """Dictionary representation of this object."""
         return {
             'id': self.slug,
@@ -169,12 +169,16 @@ class BrowserBaseCarrier(BaseCarrier):
             if not fail_silent:
                 raise e
 
-    def as_dict(self) -> dict:
+    def as_dict(self, internals: bool = False) -> dict:
+        # Get the basics.
         base = super().as_dict()
-        base['browser'] = {
-            'proxy': self.proxy,
-            'base_timeout': self.base_timeout
-        }
+
+        # Include the browser settings.
+        if internals:
+            base['browser'] = {
+                'proxy': self.proxy,
+                'base_timeout': self.base_timeout
+            }
 
         return base
 

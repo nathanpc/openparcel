@@ -411,7 +411,7 @@ def track(carrier_id: str, code: str, force: bool = False,
             carrier.set_parcel_id(cur.lastrowid)
             logger.info('parcel_new', f'New parcel {carrier.slug} '
                                       f'({carrier.db_id}) added to the system.',
-                        {'context': carrier.as_dict()})
+                        {'context': carrier.as_dict(internals=True)})
 
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
