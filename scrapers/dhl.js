@@ -40,6 +40,22 @@ class Carrier extends OpenParcel {
 		this.parcel.destination = this.parseAddress(addressRegex.exec(
 			document.querySelector(".c-tracking-result--destination").innerText)[1].trim());
 
+		// Get the estimated arrival.
+		const etaElem = document.querySelector(".c-tracking-result--delivery");
+		if (etaElem !== null) {
+			if (etaElem.firstElementChild.innerText.includes("Estimated Time of Arrival")) {
+				const etaString = etaElem.querySelector(
+					".c-tracking-result--delivery-headline").innerText;
+				const match = etaString.match(/(\w+), (\d+) (\d+) - (.+)/);
+
+				this.parcel.eta = new ParcelETA(new ParcelTimestamp(new Date(
+					Number(match[3]),  // Year
+					ParcelTimestamp.getMonthIndex(match[1]),  // Month
+					Number(match[2])   // Day
+				)), match[4]);		   // Timeframe
+			}
+		}
+
 		// Parse tracking history.
 		document.querySelectorAll(".c-tracking-result--checkpoint-info").forEach((checkpoint) => {
 			let date = null;

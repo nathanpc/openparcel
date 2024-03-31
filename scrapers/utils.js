@@ -250,16 +250,18 @@ class Parcel {
 	 * @param {ParcelTimestamp}     creationDate Date the parcel was created by the carrier.
 	 * @param {ParcelLocation}      origin       Origin location of the parcel.
 	 * @param {ParcelLocation}      destination  Final destination of the parcel.
+	 * @param {ParcelETA}			eta			 Estimated time of arrival.
 	 * @param {Array<ParcelUpdate>} history      Parcel tracking history.
 	 */
 	constructor(trackingCode = null, trackingUrl = window.location.href,
 	            creationDate = null, origin = null, destination = null,
-	            history = []) {
+	            eta = null, history = []) {
 		this.trackingCode = trackingCode;
 		this.trackingUrl = trackingUrl;
 		this.creationDate = creationDate;
 		this.origin = origin;
 		this.destination = destination;
+		this.eta = eta;
 		this.history = history;
 	}
 
@@ -288,6 +290,7 @@ class Parcel {
 			status: null,
 			origin: this.origin?.toJSON() ?? null,
 			destination: this.destination?.toJSON() ?? null,
+			eta: this.eta?.toJSON() ?? null,
 			history: []
 		}
 
@@ -440,6 +443,34 @@ class ParcelStatus {
 		}
 
 		return json;
+	}
+}
+
+/**
+ * Abstraction of a parcel's Estimated Time of Arrival (ETA).
+ */
+class ParcelETA {
+	/**
+	 * Constructs a parcel's estimated time of arrival object.
+	 *
+	 * @param {ParcelTimestamp} date		Day when the parcel will arrive.
+	 * @param {string} 			[timeframe] Around when will the parcel arrive?
+	 */
+	constructor(date, timeframe = null) {
+		this.date = date;
+		this.timeframe = timeframe;
+	}
+
+	/**
+	 * Creates a JSON representation of the object.
+	 *
+	 * @return JSON JSON representation of the object.
+	 */
+	toJSON() {
+		return {
+			date: this.date.toString(),
+			timeframe: this.timeframe
+		};
 	}
 }
 
