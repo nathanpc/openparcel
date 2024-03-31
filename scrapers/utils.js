@@ -5,6 +5,20 @@
  * @author Nathan Campos <nathan@innoveworkshop.com>
  */
 
+Object.assign(String.prototype, {
+	/**
+	 * Checks if a string contains any of the substrings in the array.
+	 *
+	 * @param {string[]} searchStrings Array of substrings to search for.
+	 *
+	 * @return {boolean} True if any of the strings was found. False otherwise.
+	 */
+    containsAny(searchStrings) {
+		const str = this;
+		return searchStrings.some(substring => str.includes(substring));
+    }
+});
+
 /**
  * The main scraper and utility class of the project. Every carrier that is
  * implemented must inherit from this class.
