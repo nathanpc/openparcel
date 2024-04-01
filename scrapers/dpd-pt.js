@@ -76,6 +76,8 @@ class Carrier extends OpenParcel {
 		} else if (code === "OFD") {
 			update.status = new ParcelStatus(ParcelStatus.Type.Delivering,
 				update.title);
+		} else if (code === "413") {
+			update.status = new ParcelStatus(ParcelStatus.Type.Issue, update.title);
 		}
 
 		return update;
