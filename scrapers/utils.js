@@ -394,6 +394,8 @@ class ParcelStatus {
 		Created: "created",
 		Posted: "posted",
 		InTransit: "in-transit",
+		DepartedOrigin: "departed-origin",
+		ArrivedDestination: "arrived-destination",
 		CustomsCleared: "customs-cleared",
 		DeliveryAttempt: "delivery-attempt",
 		WaitingPickup: "pickup",
@@ -443,6 +445,10 @@ class ParcelStatus {
 		switch (this.type) {
 			case ParcelStatus.Type.Created:
 				hasKeys(["timestamp"]);
+				break;
+			case ParcelStatus.Type.DepartedOrigin:
+			case ParcelStatus.Type.ArrivedDestination:
+				hasKeys(["location"]);
 				break;
 			case ParcelStatus.Type.WaitingPickup:
 				hasKeys(["location", "until"]);
