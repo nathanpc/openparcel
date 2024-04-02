@@ -13,9 +13,11 @@ from logging.handlers import TimedRotatingFileHandler
 class Logger:
     """The overarching class that abstracts away the logging details."""
 
-    def __init__(self, system: str, subsystem: str, log_dir: str = None):
+    def __init__(self, system: str, subsystem: str, log_dir: str = None,
+                 uuid: str = None):
         self.subsystem = subsystem
         self.log_dir = log_dir
+        self.uuid = uuid
 
         # Create a new logger for us to use.
         self.logger = logging.getLogger(system)
@@ -24,7 +26,8 @@ class Logger:
 
     def for_subsystem(self, subsystem: str) -> Logger:
         """Creates a derived logger for a specific subsystem."""
-        return Logger(self.logger.name, subsystem, log_dir=self.log_dir)
+        return Logger(self.logger.name, subsystem, log_dir=self.log_dir,
+                      uuid=self.uuid)
 
     def log(self, level: int, action_id: str, message: str,
             context: dict = None):
@@ -35,8 +38,10 @@ class Logger:
             'action': action_id,
             'detail': ''
         }
+        if self.uuid is not None:
+            extra['detail'] += f'({self.uuid}) '
         if context is not None:
-            extra['detail'] = '\n' + json.dumps(context, indent=2)
+            extra['detail'] += '\n' + json.dumps(context, indent=2)
 
         # Perform the logging operation.
         self.logger.log(level, message, extra=extra)

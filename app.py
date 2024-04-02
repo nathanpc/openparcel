@@ -4,9 +4,11 @@ import datetime
 import hashlib
 import json
 import os
+import random
 import re
 import secrets
 import sqlite3
+import time
 from typing import Optional
 
 import DrissionPage.errors
@@ -240,8 +242,26 @@ def logged_username() -> Optional[str]:
     return g.username if is_authenticated() else None
 
 
+def request_uuid() -> str:
+    """Returns a UUID that represents the current request. Will be generated if
+    needed."""
+    if 'req_uuid' not in g:
+        # Generate a meaningful UUID to reference the request in the future.
+        g.req_uuid = (hex(round(time.time() * 1000))[2:] + '-' +
+                      hashlib.md5(request.path.encode()).hexdigest()[-8:] +
+                      '-' + hashlib.md5(json.dumps(dict(request.headers))
+                                        .encode()).hexdigest()[-12:] + '-' +
+                      random.randbytes(2).hex())
+
+    return g.req_uuid
+
+
 def log_http_request(logger: Logger):
     """Logs everything about an HTTP request."""
+    # Ensure the logger has our request UUID.
+    logger.uuid = request_uuid()
+
+    # Build our machine-readable context for the logs.
     context = {
         'method': request.method,
         'full_path': request.full_path,
@@ -250,7 +270,8 @@ def log_http_request(logger: Logger):
         'args': request.args,
         'headers': dict(request.headers),
         'form': request.form,
-        'remote_addr': request.remote_addr
+        'remote_addr': request.remote_addr,
+        'req_uuid': request_uuid()
     }
 
     # Remove sensitive information from the context.
