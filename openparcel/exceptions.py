@@ -29,12 +29,19 @@ class TitledException(Exception):
         self.logger.log(level, action_id,
                         f'{self.title}: {self.message}', context=context)
 
-    def resp_dict(self) -> dict:
+    def resp_dict(self, req_uuid: str = None) -> dict:
         """Returns the equivalent response dictionary for the web service."""
-        return {
+        # Build the base response.
+        resp = {
             'title': self.title,
             'message': self.message
         }
+
+        # Do we have a UUID to include?
+        if req_uuid is not None:
+            resp['reqid'] = req_uuid
+
+        return resp
 
 
 class NotEnoughParameters(TitledException):

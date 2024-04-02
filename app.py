@@ -63,7 +63,7 @@ def app_context_teardown(exception):
 def handle_title_exception(exc: TitledException):
     """Handles uncaught exceptions that were made to provide a response to the
     user."""
-    return exc.resp_dict(), exc.status_code
+    return exc.resp_dict(req_uuid=request_uuid()), exc.status_code
 
 
 def is_authenticated() -> bool:
