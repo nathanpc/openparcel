@@ -218,6 +218,7 @@ class BrowserBaseCarrier(BaseCarrier):
             opts = ChromiumOptions()
             opts.auto_port()
             opts.incognito()
+            opts.no_imgs()
             opts.ignore_certificate_errors()
             opts.set_timeouts(page_load=self.base_timeout)
             opts.set_retry(3)
