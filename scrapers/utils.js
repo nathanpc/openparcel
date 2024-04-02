@@ -129,6 +129,39 @@ class OpenParcel {
 	}
 
 	/**
+	 * Event handler for the notifications to the engine whenever there's an
+	 * unload event.
+	 *
+	 * @param {BeforeUnloadEvent} event Before unload event.
+	 *
+	 * @see notifyUnload
+	 * @see disableNotifyUnload
+	 *
+	 * @private
+	 */
+	static _notifyUnloadHandler(event) {
+		/* Since this is deprecated Chrome will instead show a dialog that our
+		   caller script receives as an empty string. */
+		event.returnValue = 'REDIRECT';
+	}
+
+	/**
+	 * Detects redirections from shitty web frameworks and notifies our engine
+	 * whenever they happen.
+	 */
+	static notifyUnload() {
+		window.addEventListener('beforeunload', OpenParcel._notifyUnloadHandler);
+	}
+
+	/**
+	 * Disables the notifications to the engine whenever there's an unload
+	 * event.
+	 */
+	static disableNotifyUnload() {
+		window.removeEventListener('beforeunload', OpenParcel._notifyUnloadHandler);
+	}
+
+	/**
 	 * Notifies the engine that an element has finally been loaded into the page
 	 * by issuing an alert dialog box.
 	 *
@@ -150,11 +183,7 @@ class OpenParcel {
 		});
 
 		// Detect redirections from shitty web frameworks.
-		window.addEventListener('beforeunload', (event) => {
-			/* Since this is deprecated Chrome will instead show a dialog that
-			   our caller script receives as an empty string. */
-			event.returnValue = 'REDIRECT';
-		});
+		OpenParcel.notifyUnload();
 
 		// Check if something happened to our Python caller.
 		if (selectors === null)

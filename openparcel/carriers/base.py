@@ -258,6 +258,20 @@ class BrowserBaseCarrier(BaseCarrier):
         with open(filepath, mode='r', encoding='utf-8') as f:
             return f.read()
 
+    def _enable_unload_script(self):
+        """Enables the detection of redirections or reloads when waiting for
+        the page to complete."""
+        self._load_scraping_js()
+        self.page.run_js_loaded('OpenParcel.notifyUnload();')
+        self.debug_print(f'Enabled unload event listener')
+
+    def _disable_unload_script(self):
+        """Disables the detection of redirections or reloads when waiting for
+        the page to complete."""
+        self._load_scraping_js()
+        self.page.run_js_loaded('OpenParcel.disableNotifyUnload();')
+        self.debug_print(f'Disabled unload event listener')
+
     def _wait_page_complete(self, elems: list[str] | str, timeout: float = 5,
                             auto_redirect: bool = True) -> int | None:
         """Waits until a page is completely loaded, including garbage that was
