@@ -45,6 +45,15 @@ class AuthenticationFailed(TitledException):
     """Raised when the user authentication failed for any reason."""
 
 
+class TrackingCodeInvalid(TitledException):
+    """Tracking code contains invalid characters."""
+
+    def __init__(self, title: str = 'Invalid tracking code',
+                 message: str = 'The provided tracking code contains invalid '
+                                'characters.', logger: Logger = None):
+        super().__init__(title, message, 422, logger)
+
+
 class TrackingCodeNotFound(Exception):
     """No tracking code was supplied, or it doesn't exist."""
 

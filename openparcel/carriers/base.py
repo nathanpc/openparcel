@@ -15,7 +15,7 @@ from DrissionPage._elements.none_element import NoneElement
 from DrissionPage.errors import WaitTimeoutError, JavaScriptError
 
 from openparcel.exceptions import (TrackingCodeNotFound, ScrapingJsNotFound,
-                                   ScrapingReturnedError)
+                                   ScrapingReturnedError, TrackingCodeInvalid)
 
 
 class BaseCarrier:
@@ -37,6 +37,10 @@ class BaseCarrier:
         self.parcel_name: Optional[str] = None
         self.archived: bool = False
         self._resp_dict: Optional[dict] = None
+
+        # Check if the tracking code is valid before proceeding.
+        if not BaseCarrier.is_tracking_code_valid(self.tracking_code):
+            raise TrackingCodeInvalid()
 
     def get_tracking_url(self) -> str:
         """Gets the tracking URL for the carrier based on the available
@@ -105,6 +109,12 @@ class BaseCarrier:
 
         # Check if it only contains the characters that we care about.
         return re.match('^[a-z-0-9]+$', slug) is not None
+
+    @staticmethod
+    def is_tracking_code_valid(tracking_code: str) -> bool:
+        """Checks if a parcel's tracking code is in fact valid (does not
+        contain any invalid characters)."""
+        return re.search('[^A-Za-z0-9-]+', tracking_code) is None
 
     def get_resp_dict(self, extra: dict = None) -> dict:
         """Creates the response dictionary with all the information gathered

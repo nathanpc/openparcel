@@ -17,7 +17,7 @@ import openparcel.carriers as carriers
 from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
-                                   TitledException, ScrapingBrowserError)
+                                   TitledException, ScrapingBrowserError, TrackingCodeInvalid)
 
 # Get our application's logger instance.
 root_logger = Logger('flask', 'app')
@@ -300,6 +300,10 @@ def track(carrier_id: str, code: str, force: bool = False,
         logger.debug('user_track_parcel',
                      f'User {logged_username()} trying to track parcel '
                      f'{carrier_id} {code}')
+
+    # Check if we have a valid tracking code.
+    if not BaseCarrier.is_tracking_code_valid(code):
+        raise TrackingCodeInvalid(logger=logger)
 
     # Get the requested carrier if not provided.
     if carrier is None:
@@ -684,6 +688,10 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
 
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
+
+    # Check if we have a valid tracking code.
+    if not BaseCarrier.is_tracking_code_valid(code):
+        raise TrackingCodeInvalid(logger=logger)
 
     # Get the parcel ID.
     conn = connect_db()
