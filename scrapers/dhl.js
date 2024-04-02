@@ -156,8 +156,9 @@ class Carrier extends OpenParcel {
 		} else if (update.title.containsAny(["picked up", "posted"])) {
 			update.status = new ParcelStatus(ParcelStatus.Type.Posted, update.title);
 		} else if (update.title.includes("electronically")) {
+			this.parcel.creationDate = update.timestamp;
 			update.status = new ParcelStatus(ParcelStatus.Type.Created, update.title, {
-				timestamp: null
+				timestamp: update.timestamp.toString()
 			});
 		} else if (update.title.includes("Clearance processing complete")) {
 			update.status = new ParcelStatus(ParcelStatus.Type.CustomsCleared, update.title);
