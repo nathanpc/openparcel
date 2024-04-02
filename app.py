@@ -395,9 +395,10 @@ def track(carrier_id: str, code: str, force: bool = False,
         row = cur.fetchone()
         cur.close()
 
-        # Get the parcel ID if we even have one.
+        # Get the parcel ID.
         if row is not None:
-            carrier.archived = row[-2]
+            carrier.slug = row[3]
+            carrier.archived = bool(row[-2]) if row[-2] is not None else False
             carrier.parcel_name = row[-3]
 
             # Ensure that only the superuser can issue a force from the outside.
@@ -529,7 +530,7 @@ def track_id(parcel_slug: str, force: bool = False):
         created=datetime.datetime.fromisoformat(row[6]),
         last_updated=datetime.datetime.fromisoformat(row[7]),
         parcel_name=row[0],
-        archived=row[1])
+        archived=bool(row[1]))
 
     # Check if it's outdated or archived and always serve a cached version.
     if (carrier.is_outdated()
