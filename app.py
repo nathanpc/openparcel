@@ -75,8 +75,8 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
                  logger: Logger = None) -> Optional[int]:
     """Authenticates the user based on the provided credentials."""
     # Check if we have cached the user ID.
-    if 'user_id' in g:
-        return g.user_id
+    if is_authenticated():
+        return user_id()
 
     # Get a logger for us.
     if logger is None:
@@ -132,8 +132,9 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
         # Authenticate using a password.
         password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
                                             salt, 100_000)
-        cur.execute('SELECT id FROM users WHERE (username = ?) AND '
-                    '(password = ?)', (username, password_hash.hex()))
+        cur.execute('SELECT id, access_level FROM users '
+                    'WHERE (username = ?) AND (password = ?)',
+                    (username, password_hash.hex()))
         row = cur.fetchone()
         if row is None:
             logger.info('auth_failed_password',
@@ -146,7 +147,8 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
                 status_code=401)
     else:
         # Authenticate using the authentication token.
-        cur.execute('SELECT auth_tokens.user_id FROM auth_tokens '
+        cur.execute('SELECT auth_tokens.user_id, users.access_level '
+                    'FROM auth_tokens '
                     'INNER JOIN users on auth_tokens.user_id = users.id '
                     'WHERE (auth_tokens.token = ?) AND (users.username = ?) '
                     ' AND auth_tokens.active',
@@ -164,9 +166,10 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
                 status_code=401)
     cur.close()
 
-    # Caches the username and user ID for the request lifecycle.
+    # Caches the user information for the request lifecycle.
     g.username = username
     g.user_id = int(row[0])
+    g.user_acl = int(row[1])
 
     return g.user_id
 
@@ -240,6 +243,17 @@ def user_id() -> Optional[int]:
 def logged_username() -> Optional[str]:
     """Returns currently logged username if authenticated. None otherwise."""
     return g.username if is_authenticated() else None
+
+
+def user_acl() -> int:
+    """Returns the currently logged user access level."""
+    # Do we even have a user ID?
+    return g.user_acl if is_authenticated() else 0
+
+
+def is_superuser() -> bool:
+    """Checks if the currently authenticated user is an admin."""
+    return user_acl() >= 100
 
 
 def request_uuid() -> str:
@@ -387,7 +401,7 @@ def track(carrier_id: str, code: str, force: bool = False,
             carrier.parcel_name = row[-3]
 
             # Ensure that only the superuser can issue a force from the outside.
-            if not force and user_id() == 1:
+            if not force and is_superuser():
                 force = request.args.get('force', default=force, type=bool)
 
             # Check if we should return the cached value.

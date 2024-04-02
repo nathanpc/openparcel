@@ -8,10 +8,11 @@ PRAGMA foreign_keys = ON;
 
 -- Users table.
 CREATE TABLE IF NOT EXISTS users(
-	id          INTEGER     PRIMARY KEY AUTOINCREMENT,
-	username    TEXT        NOT NULL UNIQUE,
-	password    TEXT        NOT NULL,
-	salt        TEXT        NOT NULL
+	id              INTEGER     PRIMARY KEY AUTOINCREMENT,
+	username        TEXT        NOT NULL    UNIQUE,
+	password        TEXT        NOT NULL,
+	salt            TEXT        NOT NULL,
+    access_level    INTEGER     NOT NULL    DEFAULT 10
 );
 
 -- User application authentication tokens.
