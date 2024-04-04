@@ -19,7 +19,9 @@ import openparcel.carriers as carriers
 from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
-                                   TitledException, ScrapingBrowserError, TrackingCodeInvalid)
+                                   TitledException, ScrapingBrowserError,
+                                   TrackingCodeInvalid, ServerOverwhelmedError)
+from openparcel.scraper import ScrapingPool
 
 # Get our application's logger instance.
 root_logger = Logger('flask', 'app')
@@ -37,12 +39,15 @@ if not os.path.exists(config_path):
 app = Flask(__name__)
 app.config.from_file(config_path, load=yaml.safe_load)
 
+# Create our global scraping browser pool.
+scraping_pool = ScrapingPool()
+
 
 def connect_db() -> sqlite3.Connection:
     """Connects to the database and stores the connection in the global
     application context."""
     if 'db' not in g:
-        g.db = sqlite3.connect(app.config['DB_HOST'])
+        g.db = sqlite3.connect(app.config['DB_HOST'], check_same_thread=False)
         g.db.execute('PRAGMA foreign_keys = ON')
         root_logger.debug('db_connected', 'Connected to the primary database.')
 
@@ -320,8 +325,8 @@ def ping_pong():
 
 
 @app.route('/track/<carrier_id>/<code>')
-def track(carrier_id: str, code: str, force: bool = False,
-          carrier: BaseCarrier = None, logger: Logger = None):
+async def track(carrier_id: str, code: str, force: bool = False,
+                carrier: BaseCarrier = None, logger: Logger = None):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
     # Get a logger for us.
     is_new_logger = logger is None
@@ -430,7 +435,7 @@ def track(carrier_id: str, code: str, force: bool = False,
     try:
         # Fetch tracking history.
         prefetch_now = datetime.datetime.now(datetime.UTC)
-        data = carrier.fetch()
+        op = await scraping_pool.fetch(carrier, local_logger=logger)
         cur = conn.cursor()
         now = datetime.datetime.now(datetime.UTC)
 
@@ -456,22 +461,29 @@ def track(carrier_id: str, code: str, force: bool = False,
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
                     'VALUES (?, ?, ?)',
-                    (carrier.db_id, now.isoformat(), json.dumps(data)))
+                    (carrier.db_id, now.isoformat(),
+                     json.dumps(carrier.get_resp_dict(bare=True))))
         conn.commit()
         cur.close()
         logger.info('parcel_history_new',
                     f'Updated tracking history for parcel {carrier.slug} '
                     f'({carrier.db_id}) by {logged_username()}.')
 
-        # Send tracking history to the client.
+        # Mark operation as finished and send tracking history to the client.
+        op.mark_done()
         return carrier.get_resp_dict()
     except DrissionPage.errors.BaseError as e:
         # Probably an error with our scraping stuff.
         raise ScrapingBrowserError(e, carrier, logger=logger)
+    except TimeoutError as e:
+        # Looks like we are currently overwhelmed.
+        raise ServerOverwhelmedError(logger=logger, context={
+            'cause': str(e)
+        })
 
 
 @app.route('/track/<parcel_slug>')
-def track_id(parcel_slug: str, force: bool = False):
+async def track_id(parcel_slug: str, force: bool = False):
     """Tracks the history of a parcel given a parcel ID."""
     # Get a logger for us.
     logger = root_logger.for_subsystem('track.slug')
@@ -547,8 +559,8 @@ def track_id(parcel_slug: str, force: bool = False):
         return carrier.get_resp_dict()
 
     # Fetch some fresh (or cached) information about this parcel.
-    return track(carrier.uid, carrier.tracking_code, force=force,
-                 carrier=carrier, logger=logger)
+    return await track(carrier.uid, carrier.tracking_code, force=force,
+                       carrier=carrier, logger=logger)
 
 
 @app.route('/register', methods=['POST'])

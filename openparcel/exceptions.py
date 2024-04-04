@@ -73,6 +73,24 @@ class ScrapingJsNotFound(FileNotFoundError):
                          filename)
 
 
+class ServerOverwhelmedError(TitledException, TimeoutError):
+    """Server is currently overwhelmed and some operations or endpoints may not
+    be functional."""
+
+    def __init__(self, title: str = 'Service overwhelmed',
+                 message: str = 'The service is currently experiencing a lot '
+                                'of traffic or is undergoing maintenance. '
+                                'Please try again later.',
+                 context: dict = None, logger: Logger = None):
+        super().__init__(title, message, 503, logger=logger)
+
+        # Log the incident.
+        self.log(logging.WARNING, 'server_overwhelmed', {
+            'context': context,
+            'traceback': traceback.format_exc()
+        })
+
+
 class ScrapingReturnedError(TitledException):
     """Error raised when the scraping script failed to scrape the website in a
     predictable manner and reported on it."""

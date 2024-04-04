@@ -116,12 +116,13 @@ class BaseCarrier:
         contain any invalid characters)."""
         return re.search('[^A-Za-z0-9-]+', tracking_code) is None
 
-    def get_resp_dict(self, extra: dict = None) -> dict:
+    def get_resp_dict(self, extra: dict = None, bare: bool = False) -> dict:
         """Creates the response dictionary with all the information gathered
         about the parcel."""
         # Build up the response object.
         resp = self._resp_dict
-        resp.update(self.as_dict())
+        if not bare:
+            resp.update(self.as_dict())
 
         # Append any extras.
         if extra is not None:

@@ -1,4 +1,4 @@
-flask~=3.0.0
+flask[async]~=3.0.0
 requests~=2.31.0
 pyyaml~=6.0.0
 DrissionPage~=4.0.4
