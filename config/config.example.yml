@@ -4,7 +4,9 @@ DEBUG: true
 DB_HOST: 'openparcel.db'
 CACHE_REFRESH_TIMEOUT: 1800
 ALLOW_REGISTRATION: true
+MAX_SCRAPER_INSTANCES: 30
 PUBPROXY_API_KEY: 'delete this line if not using PubProxy'
 PROXIFLY_API_KEY: 'delete this line if not using Proxifly'
 OPENPROXYSPACE_API_KEY: 'delete this line if not using Open Proxy Space'
 WEBSHARE_API_KEY: 'delete this line if not using Open Proxy Space'
+å

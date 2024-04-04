@@ -40,7 +40,8 @@ app = Flask(__name__)
 app.config.from_file(config_path, load=yaml.safe_load)
 
 # Create our global scraping browser pool.
-scraping_pool = ScrapingPool()
+scraping_pool = ScrapingPool(
+    max_instances=int(app.config['MAX_SCRAPER_INSTANCES']))
 
 
 def connect_db() -> sqlite3.Connection:
