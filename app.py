@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import asyncio
 import datetime
 import hashlib
 import json
@@ -21,7 +21,7 @@ from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError,
                                    TrackingCodeInvalid, ServerOverwhelmedError)
-from openparcel.scraper import ScrapingPool
+from openparcel.scraper import ScrapingPool, DuplicateScrapingOperation
 
 # Get our application's logger instance.
 root_logger = Logger('flask', 'app')
@@ -472,6 +472,14 @@ async def track(carrier_id: str, code: str, force: bool = False,
 
         # Mark operation as finished and send tracking history to the client.
         op.mark_done()
+        return carrier.get_resp_dict()
+    except DuplicateScrapingOperation as dup:
+        # Looks like another request is already taking care of this for us.
+        while not dup.op.is_done():
+            await asyncio.sleep(.5)
+
+        # Merge the scraped information from the other operation and return.
+        dup.op.merge_resp_into(carrier)
         return carrier.get_resp_dict()
     except DrissionPage.errors.BaseError as e:
         # Probably an error with our scraping stuff.

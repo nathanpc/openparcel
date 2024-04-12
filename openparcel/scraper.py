@@ -16,6 +16,24 @@ class ScrapeOperation:
         """The state of the current scraping operation."""
         UNKNOWN, SETUP, FETCHING, FETCHED, SCRAPED, DONE = range(6)
 
+        def __eq__(self, other):
+            return self.value == other.value
+
+        def __ne__(self, other):
+            return self.value != other.value
+
+        def __lt__(self, other):
+            return self.value < other.value
+
+        def __le__(self, other):
+            return self.value <= other.value
+
+        def __gt__(self, other):
+            return self.value > other.value
+
+        def __ge__(self, other):
+            return self.value >= other.value
+
     def __init__(self, base_parcel: BrowserBaseCarrier, logger: Logger):
         self.base_parcel = base_parcel
 
@@ -23,16 +41,16 @@ class ScrapeOperation:
         self.original_traceback: str | None = None
         self.logger = logger
 
+        self.scraper_name = f'scraper-{base_parcel.tracking_code.lower()}'
         self.thread: threading.Thread = threading.Thread(
-            target=self.fetch,
-            name=f'scraper-{base_parcel.tracking_code.lower()}')
+            target=self.fetch, name=self.scraper_name)
         self.state: ScrapeOperation.State = ScrapeOperation.State.SETUP
         self.state_lock = threading.Lock()
 
     def fetch(self):
         """Fetches a parcel from the carrier and sets any appropriate flags
         internally."""
-        self.logger.debug(f'{self.thread.name}.fetch',
+        self.logger.debug(f'{self.scraper_name}.fetch',
                           'Started scraping thread fetch')
 
         # Try to fetch information about the parcel and capture any exceptions.
@@ -46,13 +64,13 @@ class ScrapeOperation:
             self.exception_raised = e
 
             # Log the incident.
-            self.logger.warning(f'{self.thread.name}.async_fetch_exception',
+            self.logger.warning(f'{self.scraper_name}.async_fetch_exception',
                                 'An exception occurred while fetching a '
                                 'parcel within the scraper\'s thread',
                                 {'traceback': self.original_traceback})
 
         # Flag the fetching as finished.
-        self.logger.debug(f'{self.thread.name}.fetched',
+        self.logger.debug(f'{self.scraper_name}.fetched',
                           'Finished scraping fetch from thread')
         self.set_state(ScrapeOperation.State.FETCHED)
 
@@ -65,7 +83,7 @@ class ScrapeOperation:
         while not self.thread.is_alive():
             await asyncio.sleep(1)
         self.thread.join()
-        self.logger.debug(f'{self.thread.name}.joined',
+        self.logger.debug(f'{self.scraper_name}.joined',
                           'Joined scraping thread')
         self.set_state(ScrapeOperation.State.SCRAPED)
 
@@ -76,9 +94,18 @@ class ScrapeOperation:
     def merge_resp_into(self, parcel: BrowserBaseCarrier):
         """Since the base parcel contains sensitive information, this method
         only copies over the general information about that was scraped."""
-        # TODO: Use the from_cache() method to merge the response into the
-        #  other object.
-        # TODO: Afterwards set the cached attribute to False.
+        # Merge our updated details into the other parcel.
+        parcel.from_cache(
+            db_id=self.base_parcel.db_id,
+            cache=self.base_parcel.get_resp_dict(bare=True),
+            slug=self.base_parcel.slug,
+            created=self.base_parcel.created,
+            last_updated=self.base_parcel.last_updated,
+            parcel_name=parcel.parcel_name,
+            archived=parcel.archived)
+
+        # Since this history has just been fetched it's not cached.
+        parcel.cached = False
 
     def set_state(self, state: State):
         """Sets the current state of the scraping operation."""
@@ -104,6 +131,14 @@ class ScrapeOperation:
             return self.state >= ScrapeOperation.State.DONE
 
 
+class DuplicateScrapingOperation(Exception):
+    """Raised when another scraping operation is already fetching the requested
+    information and can be reused."""
+
+    def __init__(self, op: ScrapeOperation):
+        self.op = op
+
+
 class ScrapingPool:
     """An abstraction over the tool that will be used for scraping a website."""
 
@@ -126,7 +161,13 @@ class ScrapingPool:
         if local_logger is None:
             local_logger = self.logger
 
-        # TODO: Check if we already have an instance fetching this parcel.
+        # Check if we already have an instance fetching this parcel.
+        op = await self.get_operation(parcel)
+        if op is not None:
+            local_logger.debug('fetch.duplicate',
+                               f'Another operation with name {op.scraper_name} '
+                               'is already fetching this parcel.')
+            raise DuplicateScrapingOperation(op)
 
         # Wait until an instance is available.
         try:
@@ -145,6 +186,18 @@ class ScrapingPool:
         await self.run_instance(op)
 
         return op
+
+    async def get_operation(self, parcel: BrowserBaseCarrier) \
+            -> ScrapeOperation | None:
+        """Tries to get a scraping operation based on a parcel. This method
+        won't look for an exact object reference match, but will instead look
+        for a carrier and tracking code match."""
+        async with self._instances_lock:
+            for instance in self.instances:
+                if instance.base_parcel.is_similar(parcel):
+                    return instance
+
+        return None
 
     async def run_instance(self, op: ScrapeOperation):
         """Add a scrape operation to the instance list, run it, and drop it as

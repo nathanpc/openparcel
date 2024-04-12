@@ -8,7 +8,7 @@ import secrets
 
 from os.path import abspath, dirname, exists
 from string import Template
-from typing import Optional
+from typing import Optional, Self
 
 from DrissionPage import ChromiumPage, ChromiumOptions
 from DrissionPage._elements.none_element import NoneElement
@@ -115,6 +115,15 @@ class BaseCarrier:
         """Checks if a parcel's tracking code is in fact valid (does not
         contain any invalid characters)."""
         return re.search('[^A-Za-z0-9-]+', tracking_code) is None
+
+    def is_similar(self, other: Self):
+        """Checks if a parcel is similar to this one. Uses the slug (if
+        available) or carrier and tracking code to infer the similarity."""
+        if self.slug is not None and other.slug is not None:
+            return self.slug == other.slug
+
+        return self.name == other.name and \
+            self.tracking_code == other.tracking_code
 
     def get_resp_dict(self, extra: dict = None, bare: bool = False) -> dict:
         """Creates the response dictionary with all the information gathered
