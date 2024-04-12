@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 
 from os.path import dirname, abspath
 from logging.handlers import TimedRotatingFileHandler
@@ -92,8 +93,8 @@ class Logger:
         self.logger.addHandler(fh)
 
         # Create the console handler.
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.WARNING)
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(logging.DEBUG)
         ch.setFormatter(sf)
         self.logger.addHandler(ch)
 
