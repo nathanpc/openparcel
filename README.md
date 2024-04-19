@@ -50,5 +50,8 @@ flask run
 
 ## License
 
-This library is free software; you may redistribute and/or modify it under the
-terms of the [Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/).
+This library and service is free and its source is available under the
+[Server Side Public License (SSPL) v1](https://spdx.org/licenses/SSPL-1.0.html),
+allowing personal use that respects your privacy (self hosting) while ensuring
+it is not exploited by comercial entities.
+
