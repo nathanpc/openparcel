@@ -1,5 +1,6 @@
 # Private files.
 logs/
+sql/private/
 sql/playground.sql
 *.db
 

@@ -1,7 +1,11 @@
 ---
 SECRET_KEY: 'please change me'
 DEBUG: true
-DB_HOST: 'openparcel.db'
+DB_HOST: 'localhost'
+DB_DATABASE: 'openparcel'
+DB_USER: 'dbuser'
+DB_PASS: 'dbpassword'
+DB_POOL_SIZE: 8
 CACHE_REFRESH_TIMEOUT: 1800
 ALLOW_REGISTRATION: true
 MAX_SCRAPER_INSTANCES: 30

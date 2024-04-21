@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="SqlDialectMappings">
-    <file url="file://$PROJECT_DIR$/sql/initialize.sql" dialect="GenericSQL" />
-    <file url="PROJECT" dialect="SQLite" />
+    <file url="file://$PROJECT_DIR$/sql/initialize.sql" dialect="MySQL" />
+    <file url="file://$PROJECT_DIR$/sql/playground.sql" dialect="MySQL" />
+    <file url="file://$PROJECT_DIR$/sql/private/migrate_mysql.sql" dialect="MySQL" />
+    <file url="file://$PROJECT_DIR$/sql/private/playground_sqlite.sql" dialect="SQLite" />
+    <file url="PROJECT" dialect="MySQL" />
   </component>
 </project>

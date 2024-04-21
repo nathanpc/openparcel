@@ -7,13 +7,13 @@ import os
 import random
 import re
 import secrets
-import sqlite3
 import time
 from typing import Optional
 
 import DrissionPage.errors
 import yaml
 from flask import Flask, request, g
+from mysql.connector.pooling import MySQLConnectionPool, PooledMySQLConnection
 
 import openparcel.carriers as carriers
 from openparcel.logger import Logger
@@ -39,30 +39,34 @@ if not os.path.exists(config_path):
 app = Flask(__name__)
 app.config.from_file(config_path, load=yaml.safe_load)
 
+# Create MySQL connection pool.
+db_config = {'host': app.config['DB_HOST'],
+             'database': app.config['DB_DATABASE'],
+             'user': app.config['DB_USER'],
+             'password': app.config['DB_PASS']}
+db_conn_pool = MySQLConnectionPool(pool_name='op_main',
+                                   pool_size=app.config['DB_POOL_SIZE'],
+                                   **db_config)
+
 # Create our global scraping browser pool.
 scraping_pool = ScrapingPool(
     max_instances=int(app.config['MAX_SCRAPER_INSTANCES']))
 
 
-def connect_db() -> sqlite3.Connection:
+def connect_db() -> PooledMySQLConnection:
     """Connects to the database and stores the connection in the global
     application context."""
     if 'db' not in g:
-        g.db = sqlite3.connect(app.config['DB_HOST'], check_same_thread=False)
-        g.db.execute('PRAGMA foreign_keys = ON')
-        root_logger.debug('db_connected', 'Connected to the primary database.')
-
+        g.db = db_conn_pool.get_connection()
     return g.db
 
 
 @app.teardown_appcontext
 def app_context_teardown(exception):
     """Event handler when the application context is being torn down."""
-    # Close the database connection.
-    db = g.pop('db', None)
+    db: PooledMySQLConnection = g.pop('db', None)
     if db is not None:
         db.close()
-        root_logger.debug('db_closed', 'Primary database connection closed')
 
 
 @app.errorhandler(TitledException)
@@ -442,8 +446,8 @@ async def track(carrier_id: str, code: str, force: bool = False,
 
         # Log the time it took to fetch the parcel.
         logger.info('parcel_fetch', f'Parcel {carrier_id} {code} fetched in '
-                    f'{(now - prefetch_now).total_seconds()} seconds using '
-                    f'proxy {carrier.proxy}')
+                                    f'{(now - prefetch_now).total_seconds()} seconds using '
+                                    f'proxy {carrier.proxy}')
 
         # Is this the first time that we are caching this parcel?
         if carrier.db_id is None:
@@ -543,7 +547,7 @@ async def track_id(parcel_slug: str, force: bool = False):
             status_code=404)
 
     # Gather some basic information about the parcel.
-    carrier = carriers.from_id(row[3])(row[4])
+    carrier = carriers.from_id(row[3])(str(row[4]))
     carrier.from_cache(
         db_id=row[2],
         cache=json.loads(row[-2]),
@@ -605,11 +609,20 @@ def register():
                     'and underscore.',
             status_code=422)
 
+    # Check if username is long enough.
+    if 30 < len(username) < 3:
+        raise TitledException(
+            title='Invalid username',
+            message='Username must have at least 3 characters and no more than '
+                    '30 characters.',
+            status_code=422)
+
     # Check if the password is long enough.
-    if len(password) < 6:
+    if 6 < len(password) < 250:
         raise TitledException(
             title='Invalid password',
-            message='Password must have at least 6 characters.',
+            message='Password must have at least 6 characters and no more than '
+                    '250 characters.',
             status_code=422)
 
     # Check if the username already exists.
@@ -672,6 +685,9 @@ def create_auth_token(description: str = None, username: str = None,
                 status_code=422)
 
         description = request.form['description'].strip()
+
+    # Ensure the description isn't enormous.
+    description = description[:150]
 
     # Generate the authentication token store it.
     auth_token = secrets.token_hex(20)
@@ -779,8 +795,15 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
 def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
                    parcel_id: int = None, logger: Logger = None):
     """Stores a parcel into the user's tracked parcels list."""
+    # Get the name of the saved parcel.
     if name is None:
         name = request.form.get('name') or None
+    if len(name) > 100:
+        raise TitledException(
+            title='Invalid name',
+            message='Provided parcel name is too long. Parcel names must not'
+                    'exceed 100 characters.',
+            status_code=422)
 
     # Get a logger for us.
     if logger is None:
@@ -994,9 +1017,9 @@ def list_parcels():
         '  WHERE user_parcels.user_id = ? '
         '  ORDER BY history_cache.retrieved DESC) AS sq '
         'GROUP BY sq.id', (user_id(),))
-    for row in cur.fetchall():
+    for row in cur:
         # Build up the tracked object.
-        carrier = carriers.from_id(row[3])(row[2])
+        carrier = carriers.from_id(row[3])(str(row[2]))
         carrier.from_cache(
             db_id=row[2],
             cache=json.loads(row[8]),
