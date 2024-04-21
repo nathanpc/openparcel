@@ -11,8 +11,10 @@ import time
 from typing import Optional
 
 import DrissionPage.errors
+import mysql
 import yaml
 from flask import Flask, request, g
+from mysql.connector import MySQLConnection
 from mysql.connector.pooling import MySQLConnectionPool, PooledMySQLConnection
 
 import openparcel.carriers as carriers
@@ -53,7 +55,7 @@ scraping_pool = ScrapingPool(
     max_instances=int(app.config['MAX_SCRAPER_INSTANCES']))
 
 
-def connect_db() -> PooledMySQLConnection:
+def connect_db() -> MySQLConnection | PooledMySQLConnection:
     """Connects to the database and stores the connection in the global
     application context."""
     if 'db' not in g:
@@ -64,8 +66,9 @@ def connect_db() -> PooledMySQLConnection:
 @app.teardown_appcontext
 def app_context_teardown(exception):
     """Event handler when the application context is being torn down."""
-    db: PooledMySQLConnection = g.pop('db', None)
-    if db is not None:
+    db: MySQLConnection = g.pop('db', None)
+    if db is not None and db.is_connected():
+        db.commit()
         db.close()
 
 
@@ -122,7 +125,7 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
     # Check the username and get the salt used to generate the password hash.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT salt FROM users WHERE username = ?', (username,))
+    cur.execute('SELECT salt FROM users WHERE username = %s', (username,))
     row = cur.fetchone()
     if row is None:
         logger.info('auth_failed_username',
@@ -143,7 +146,7 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
         password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
                                             salt, 100_000)
         cur.execute('SELECT id, access_level FROM users '
-                    'WHERE (username = ?) AND (password = ?)',
+                    'WHERE (username = %s) AND (password = %s)',
                     (username, password_hash.hex()))
         row = cur.fetchone()
         if row is None:
@@ -160,7 +163,7 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
         cur.execute('SELECT auth_tokens.user_id, users.access_level '
                     'FROM auth_tokens '
                     'INNER JOIN users on auth_tokens.user_id = users.id '
-                    'WHERE (auth_tokens.token = ?) AND (users.username = ?) '
+                    'WHERE (auth_tokens.token = %s) AND (users.username = %s) '
                     ' AND auth_tokens.active',
                     (auth_token, username))
         row = cur.fetchone()
@@ -370,9 +373,9 @@ async def track(carrier_id: str, code: str, force: bool = False,
         # Check if it has been previously tracked and isn't outdated.
         cur = conn.cursor()
         cur.execute(
-            'SELECT id FROM parcels WHERE (carrier = ?) '
-            ' AND (tracking_code = ?) '
-            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?) '
+            'SELECT id FROM parcels WHERE (carrier = %s) '
+            ' AND (tracking_code = %s) '
+            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < %s) '
             'ORDER BY created DESC LIMIT 1',
             (carrier_id, code, carrier.outdated_period_secs))
         row = cur.fetchone()
@@ -383,10 +386,10 @@ async def track(carrier_id: str, code: str, force: bool = False,
 
         # Check if it has been previously cached.
         cur = conn.cursor()
-        cond = '(parcels.id = ?) '
+        cond = '(parcels.id = %s) '
         cond_values = (carrier.db_id,)
         if carrier.db_id is None:
-            cond = '(parcels.carrier = ?) AND (parcels.tracking_code = ?) '
+            cond = '(parcels.carrier = %s) AND (parcels.tracking_code = %s) '
             cond_values = (carrier_id, code)
         cur.execute(
             'SELECT parcels.id, parcels.carrier, parcels.tracking_code, '
@@ -397,9 +400,9 @@ async def track(carrier_id: str, code: str, force: bool = False,
             'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
             'LEFT JOIN user_parcels '
             ' ON (history_cache.parcel_id = user_parcels.parcel_id) '
-            ' AND (user_parcels.user_id = ?) '
+            ' AND (user_parcels.user_id = %s) '
             f'WHERE {cond} '
-            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < ?)'
+            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < %s)'
             'ORDER BY history_cache.retrieved DESC LIMIT 1',
             (user_id(),) + cond_values + (carrier.outdated_period_secs,))
         row = cur.fetchone()
@@ -455,7 +458,7 @@ async def track(carrier_id: str, code: str, force: bool = False,
             cur.execute(
                 'INSERT OR IGNORE INTO parcels '
                 ' (carrier, tracking_code, created, slug) '
-                'VALUES (?, ?, ?, ?)',
+                'VALUES (%s, %s, %s, %s)',
                 (carrier_id, code, now.isoformat(), carrier.generate_slug()))
             conn.commit()
             carrier.set_parcel_id(cur.lastrowid)
@@ -465,7 +468,7 @@ async def track(carrier_id: str, code: str, force: bool = False,
 
         # Cache the retrieved tracking history.
         cur.execute('INSERT INTO history_cache (parcel_id, retrieved, data) '
-                    'VALUES (?, ?, ?)',
+                    'VALUES (%s, %s, %s)',
                     (carrier.db_id, now.isoformat(),
                      json.dumps(carrier.get_resp_dict(bare=True))))
         conn.commit()
@@ -531,7 +534,7 @@ async def track_id(parcel_slug: str, force: bool = False):
         'LEFT JOIN user_parcels '
         ' ON user_parcels.parcel_id = history_cache.parcel_id '
         'LEFT JOIN parcels ON parcels.id = history_cache.parcel_id '
-        'WHERE (user_parcels.user_id = ?) AND (parcels.slug = ?) '
+        'WHERE (user_parcels.user_id = %s) AND (parcels.slug = %s) '
         'ORDER BY history_cache.retrieved DESC LIMIT 1',
         (user_id(), parcel_slug))
     row = cur.fetchone()
@@ -628,7 +631,7 @@ def register():
     # Check if the username already exists.
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT id FROM users WHERE username = ?', (username,))
+    cur.execute('SELECT id FROM users WHERE username = %s', (username,))
     if cur.fetchone() is not None:
         raise TitledException(
             title='Username already exists',
@@ -643,7 +646,8 @@ def register():
 
     # Insert the new user into the database.
     cur = conn.cursor()
-    cur.execute('INSERT INTO users (username, password, salt) VALUES (?, ?, ?)',
+    cur.execute('INSERT INTO users (username, password, salt) '
+                'VALUES (%s, %s, %s)',
                 (username, password_hash.hex(), salt.hex()))
     conn.commit()
     cur.close()
@@ -694,7 +698,7 @@ def create_auth_token(description: str = None, username: str = None,
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('INSERT INTO auth_tokens (token, user_id, description) '
-                'VALUES (?, ?, ?)', (auth_token, user_id(), description))
+                'VALUES (%s, %s, %s)', (auth_token, user_id(), description))
     conn.commit()
     cur.close()
 
@@ -723,7 +727,7 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
     conn = connect_db()
     cur = conn.cursor()
     cur.execute('SELECT description, active FROM auth_tokens '
-                'WHERE (token = ?) AND (user_id = ?) AND active',
+                'WHERE (token = %s) AND (user_id = %s) AND active',
                 (revoke_token, user_id()))
     row = cur.fetchone()
     if row is None:
@@ -738,7 +742,7 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
     # Mark the token as inactive.
     cur = conn.cursor()
     cur.execute('UPDATE auth_tokens SET active = false '
-                'WHERE (token = ?) AND (user_id = ?)',
+                'WHERE (token = %s) AND (user_id = %s)',
                 (revoke_token, user_id()))
     conn.commit()
     cur.close()
@@ -772,8 +776,8 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
     cur.execute('SELECT parcels.id, parcels.slug, user_parcels.name '
                 'FROM parcels LEFT JOIN user_parcels '
                 ' ON (parcels.id = user_parcels.parcel_id) '
-                '  AND (user_parcels.user_id = ?) '
-                'WHERE (parcels.carrier = ?) AND (parcels.tracking_code = ?)',
+                '  AND (user_parcels.user_id = %s) '
+                'WHERE (parcels.carrier = %s) AND (parcels.tracking_code = %s)',
                 (user_id(), carrier_id, code))
     row = cur.fetchone()
     cur.close()
@@ -830,7 +834,7 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     cur.execute(
         'SELECT parcels.id, user_parcels.name FROM parcels '
         'INNER JOIN user_parcels ON user_parcels.parcel_id = parcels.id '
-        'WHERE (parcels.slug = ?) AND (user_parcels.user_id = ?)',
+        'WHERE (parcels.slug = %s) AND (user_parcels.user_id = %s)',
         (parcel_slug, user_id()))
     row = cur.fetchone()
     if row is not None:
@@ -854,7 +858,7 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
         # Remove it from the saved parcels list.
         cur = conn.cursor()
         cur.execute('DELETE FROM user_parcels '
-                    'WHERE (parcel_id = ?) AND (user_id = ?)',
+                    'WHERE (parcel_id = %s) AND (user_id = %s)',
                     (parcel_id, user_id()))
         conn.commit()
         cur.close()
@@ -877,7 +881,7 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     # Check if the parcel actually exists in the system.
     if parcel_id is None:
         cur = conn.cursor()
-        cur.execute('SELECT id FROM parcels WHERE slug = ?', (parcel_slug,))
+        cur.execute('SELECT id FROM parcels WHERE slug = %s', (parcel_slug,))
         row = cur.fetchone()
         if row is None:
             raise TitledException(
@@ -893,7 +897,7 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
     cur = conn.cursor()
     cur.execute(
         'INSERT INTO user_parcels (name, archived, user_id, parcel_id) '
-        'VALUES (?, ?, ?, ?)', (name, archived, user_id(), parcel_id))
+        'VALUES (%s, %s, %s, %s)', (name, archived, user_id(), parcel_id))
     conn.commit()
     cur.close()
 
@@ -935,7 +939,7 @@ def archive_flag_parcel(parcel_slug: str):
         'SELECT parcels.id, user_parcels.name, user_parcels.archived '
         'FROM parcels '
         'INNER JOIN user_parcels ON user_parcels.parcel_id = parcels.id '
-        'WHERE (parcels.slug = ?) AND (user_parcels.user_id = ?)',
+        'WHERE (parcels.slug = %s) AND (user_parcels.user_id = %s)',
         (parcel_slug, user_id()))
     row = cur.fetchone()
     cur.close()
@@ -963,8 +967,8 @@ def archive_flag_parcel(parcel_slug: str):
 
     # Toggle the parcel's archived flag.
     cur = conn.cursor()
-    cur.execute('UPDATE user_parcels SET archived = ? '
-                'WHERE (user_id = ?) AND (parcel_id = ?)',
+    cur.execute('UPDATE user_parcels SET archived = %s '
+                'WHERE (user_id = %s) AND (parcel_id = %s)',
                 (request.method == 'POST', user_id(), parcel_id))
     conn.commit()
     cur.close()
@@ -1014,7 +1018,7 @@ def list_parcels():
         '  LEFT JOIN parcels ON parcels.id = user_parcels.parcel_id '
         '  LEFT JOIN history_cache '
         '   ON history_cache.parcel_id = user_parcels.parcel_id '
-        '  WHERE user_parcels.user_id = ? '
+        '  WHERE user_parcels.user_id = %s '
         '  ORDER BY history_cache.retrieved DESC) AS sq '
         'GROUP BY sq.id', (user_id(),))
     for row in cur:
