@@ -1012,37 +1012,50 @@ def list_parcels():
     # Check if we are authorized.
     http_authenticate('auth_token', logger=logger)
 
-    # Get the list from the database.
+    # Get the list of the user's parcels from the database.
     conn = connect_db()
     cur = conn.cursor()
-    # TODO: Fix this query.
     cur.execute(
-        'SELECT DISTINCT * FROM '
-        ' (SELECT user_parcels.name, user_parcels.archived, parcels.id, '
-        '   parcels.carrier, parcels.tracking_code, parcels.slug, '
-        '   parcels.created, history_cache.retrieved, history_cache.data '
-        '  FROM user_parcels '
-        '  LEFT JOIN parcels ON parcels.id = user_parcels.parcel_id '
-        '  LEFT JOIN history_cache '
-        '   ON history_cache.parcel_id = user_parcels.parcel_id '
-        '  WHERE user_parcels.user_id = %s '
-        '  ORDER BY history_cache.retrieved DESC) AS sq '
-        'GROUP BY sq.id', (user_id(),))
-    for row in cur:
+        'SELECT user_parcels.name, user_parcels.archived, parcels.id, '
+        ' parcels.carrier, parcels.tracking_code, parcels.slug, '
+        ' parcels.created '
+        'FROM user_parcels '
+        'LEFT JOIN parcels ON parcels.id = user_parcels.parcel_id '
+        'WHERE user_parcels.user_id = %s', (user_id(),))
+    parcel_rows = cur.fetchall()
+    cur.close()
+
+    # Go through the user's parcels appending the tracking history.
+    for parcel_row in parcel_rows:
+        # Fetch the parcel history.
+        cur = conn.cursor()
+        cur.execute('SELECT retrieved, data FROM history_cache '
+                    'WHERE parcel_id = %s ORDER BY retrieved DESC LIMIT 1',
+                    (parcel_row[2],))
+        hist_row = cur.fetchone()
+        cur.close()
+
+        # Check if there's no tracking history for this parcel.
+        if hist_row is None:
+            logger.error(
+                'no_history',
+                f'User parcel ({parcel_row[5]}) has no tracking history',
+                {'row': parcel_row})
+            continue
+
         # Build up the tracked object.
-        carrier = carriers.from_id(row[3])(str(row[2]))
+        carrier = carriers.from_id(parcel_row[3])(str(parcel_row[4]))
         carrier.from_cache(
-            db_id=row[2],
-            cache=json.loads(row[8]),
-            slug=row[5],
-            created=datetime.datetime.fromisoformat(row[6]),
-            last_updated=datetime.datetime.fromisoformat(row[7]),
-            parcel_name=row[0],
-            archived=row[1])
+            db_id=parcel_row[2],
+            cache=json.loads(hist_row[1]),
+            slug=parcel_row[5],
+            created=parcel_row[6],
+            last_updated=hist_row[0],
+            parcel_name=parcel_row[0],
+            archived=parcel_row[1])
 
         # Append the object to the list.
         resp['parcels'].append(carrier.get_resp_dict())
-    cur.close()
 
     return resp
 
