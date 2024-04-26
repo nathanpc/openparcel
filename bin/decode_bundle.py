@@ -4,11 +4,10 @@ import base64
 import hashlib
 import sys
 
-from os.path import abspath, dirname, exists
-
-import yaml
 from Crypto.Cipher import AES
 from Crypto.Util import Counter
+
+import config
 
 
 class InputLineStream:
@@ -91,16 +90,8 @@ class RequestBundle:
 
 
 if __name__ == '__main__':
-    # Check if we have a configuration file present.
-    config_path = dirname(dirname(abspath(__file__))) + '/config/config.yml'
-    if not exists(config_path):
-        print(f'Missing the configuration file in "{config_path}".')
-        exit(1)
-
-    # Read the configuration file and extract our key.
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    key = config['REQ_BUNDLE_KEY']
+    # Load key from configuration.
+    key = config.app('request_bundle_key')
 
     # Read the bundle and print its decoded output.
     bc = RequestBundle(key)

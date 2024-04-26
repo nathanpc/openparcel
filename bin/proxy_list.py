@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 
 import json
-import sqlite3
 import string
 import random
+import sys
 import time
 
 from operator import itemgetter
-from os.path import abspath, dirname
 from typing import Mapping
 
 import requests
-import yaml
 import DrissionPage.errors
+from mysql.connector import MySQLConnection
 
+import config
 from openparcel.carriers import carriers
 from openparcel.exceptions import ScrapingReturnedError
 
-# Load the configuration file.
-with open(dirname(dirname(abspath(__file__))) + '/config/config.yml', 'r') as s:
-    config = yaml.safe_load(s)
+
+# Module context.
+this = sys.modules[__name__]
+this.db_conn = None
 
 
 class Proxy:
@@ -28,7 +29,7 @@ class Proxy:
     def __init__(self, addr: str, port: int, country: str, speed: int,
                  protocol: str, active: bool = True, db_id: int = None,
                  valid_carriers: list[dict] = None,
-                 conn: sqlite3.Connection = None):
+                 conn: MySQLConnection = this.db_conn):
         self.db_id: int = db_id
         self.addr: str = addr
         self.port: int = port
@@ -37,7 +38,7 @@ class Proxy:
         self.protocol: str = protocol.lower()
         self.active: bool = active
         self.valid_carriers: list[dict] = valid_carriers
-        self.conn: sqlite3.Connection = conn
+        self.conn: MySQLConnection = conn
 
         # Ensure we always have an empty list of valid carriers.
         if self.valid_carriers is None:
@@ -150,11 +151,11 @@ class ProxyList:
     """Generic proxy list provider class."""
 
     def __init__(self, url: str, api_key: str = None, auto_save: bool = True,
-                 conn: sqlite3.Connection = None,
+                 conn: MySQLConnection = this.db_conn,
                  headers: Mapping[str, str | bytes] = None):
         self.url: str = url
         self.list: list[Proxy] = []
-        self.conn: sqlite3.Connection = conn
+        self.conn: MySQLConnection = conn
         self.auto_save: bool = auto_save
         self.headers: Mapping[str, str | bytes] = headers
 
@@ -199,11 +200,9 @@ class ProxyList:
 
     def _import_api_key(self, service_name: str, default: str):
         """Imports an API key from the configuration if one is available."""
-        config_key = f'{service_name.upper()}_API_KEY'
-
         # Import the key from the configuration.
-        if default is None and config_key in config:
-            self.api_key = config[config_key]
+        if default is None:
+            self.api_key = config.proxy_api_key(service_name)
             return
 
         self.api_key = default
@@ -213,7 +212,7 @@ class PubProxy(ProxyList):
     """Proxy list using PubProxy as the backend."""
 
     def __init__(self, api_key: str = None, country_denylist: list = None,
-                 auto_save: bool = True, conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
         super().__init__('http://pubproxy.com/api/proxy?format=json',
                          auto_save=auto_save, conn=conn, api_key=api_key)
 
@@ -257,7 +256,7 @@ class Proxifly(ProxyList):
     """Proxy list using Proxifly as the backend."""
 
     def __init__(self, api_key: str = None, quantity: int = 5,
-                 auto_save: bool = True, conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
         # Initialize the parent class.
         super().__init__('https://api.proxifly.dev/get-proxy', conn=conn,
                          auto_save=auto_save, api_key=api_key,
@@ -302,7 +301,7 @@ class OpenProxySpace(ProxyList):
     """Proxy list using Open Proxy Space as the backend."""
 
     def __init__(self, api_key: str = None, quantity: int = 5,
-                 auto_save: bool = True, conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
         super().__init__('https://api.openproxy.space/premium/json',
                          auto_save=auto_save, conn=conn, api_key=api_key)
 
@@ -340,7 +339,7 @@ class ProxyScrapeFree(ProxyList):
     """Proxy list using ProxyScrape freebies list as the backend."""
 
     def __init__(self, timeout: int = 8000, auto_save: bool = True,
-                 conn: sqlite3.Connection = None):
+                 conn: MySQLConnection = this.db_conn):
         url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
                f'request=displayproxies&protocol=all&timeout={timeout}'
                '&proxy_format=protocolipport&format=json')
@@ -370,7 +369,7 @@ class WebShare(ProxyList):
     """Proxy list using WebShare as the backend."""
 
     def __init__(self, api_key: str = None, quantity: int = 25,
-                 auto_save: bool = True, conn: sqlite3.Connection = None):
+                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
         # Initialize the parent class.
         super().__init__('https://proxy.webshare.io/api/v2/proxy/list/?'
                          f'mode=direct&page=1&page_size={quantity}', conn=conn,
@@ -398,13 +397,11 @@ class WebShare(ProxyList):
 
 if __name__ == '__main__':
     # Connect to the database.
-    db = sqlite3.connect(dirname(dirname(abspath(__file__))) + '/' +
-                         config['DB_HOST'])
-    db.execute('PRAGMA foreign_keys = ON')
+    this.db_conn = MySQLConnection(**config.db_conn())
 
     # Get a new proxy list and save automatically.
-    proxies = WebShare(auto_save=True, conn=db)
+    proxies = WebShare(auto_save=True)
     proxies.load()
 
     # Ensure we close the database connection.
-    db.close()
+    this.db_conn.close()

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import asyncio
 import datetime
 import hashlib
@@ -12,11 +13,11 @@ from typing import Optional
 
 import DrissionPage.errors
 import mysql.connector.errors
-import yaml
 from flask import Flask, request, g
 from mysql.connector import MySQLConnection
 from mysql.connector.pooling import MySQLConnectionPool, PooledMySQLConnection
 
+import config
 import openparcel.carriers as carriers
 from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
@@ -28,31 +29,17 @@ from openparcel.scraper import ScrapingPool, DuplicateScrapingOperation
 # Get our application's logger instance.
 root_logger = Logger('flask', 'app')
 
-# Check if we have a configuration file present.
-config_path = 'config/config.yml'
-if not os.path.exists(config_path):
-    root_logger.critical('config_notfound', 'Missing configuration file.')
-    print(f'Missing the configuration file in "{config_path}". Duplicate the '
-          'example file contained in the same folder and change anything you '
-          'see fit.')
-    exit(1)
-
 # Define the global flask application object.
 app = Flask(__name__)
-app.config.from_file(config_path, load=yaml.safe_load)
 
 # Create MySQL connection pool.
-db_config = {'host': app.config['DB_HOST'],
-             'database': app.config['DB_DATABASE'],
-             'user': app.config['DB_USER'],
-             'password': app.config['DB_PASS']}
 db_conn_pool = MySQLConnectionPool(pool_name='op_main',
-                                   pool_size=app.config['DB_POOL_SIZE'],
-                                   **db_config)
+                                   pool_size=config.db('pool_size'),
+                                   **config.db_conn())
 
 # Create our global scraping browser pool.
 scraping_pool = ScrapingPool(
-    max_instances=int(app.config['MAX_SCRAPER_INSTANCES']))
+    max_instances=int(config.app('scraper')['max_instances']))
 
 
 def connect_db() -> MySQLConnection | PooledMySQLConnection:
@@ -324,7 +311,7 @@ def log_http_request(logger: Logger):
 def should_refresh_parcel(parcel: BaseCarrier, timediff: float,
                           force: bool = False) -> bool:
     """Checks if a parcel tracking history is old enough to have timed out."""
-    timeout = app.config['CACHE_REFRESH_TIMEOUT']
+    timeout = config.app('cache')['refresh_timeout']
     return force or (not parcel.archived and abs(timediff) >= timeout)
 
 
@@ -596,7 +583,7 @@ def register():
     log_http_request(logger)
 
     # Check if we are accepting registrations.
-    if not app.config['ALLOW_REGISTRATION']:
+    if not config.app('allow_registration'):
         raise TitledException(
             title='Registrations disabled',
             message='Registrations have been disabled by the administrator.',
