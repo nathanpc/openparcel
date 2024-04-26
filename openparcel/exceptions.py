@@ -7,6 +7,7 @@ import traceback
 from typing import Optional
 
 import DrissionPage.errors
+import mysql.connector.errors
 
 from openparcel.logger import Logger, LoggerNotFound
 
@@ -21,13 +22,18 @@ class TitledException(Exception):
         self.status_code = status_code
         self.logger = logger
 
-    def log(self, level: int, action_id: str, context: dict = None):
+    def log(self, level: int, action_id: str, message: str = None,
+            context: dict = None):
         """Logs the occurrence of this exception."""
         if self.logger is None:
             raise LoggerNotFound
 
-        self.logger.log(level, action_id,
-                        f'{self.title}: {self.message}', context=context)
+        # Build up the log message if needed.
+        if message is None:
+            message = f'{self.title}: {self.message}'
+
+        # Log the incident.
+        self.logger.log(level, action_id, message, context=context)
 
     def resp_dict(self, req_uuid: str = None) -> dict:
         """Returns the equivalent response dictionary for the web service."""
@@ -85,10 +91,31 @@ class ServerOverwhelmedError(TitledException, TimeoutError):
         super().__init__(title, message, 503, logger=logger)
 
         # Log the incident.
-        self.log(logging.WARNING, 'server_overwhelmed', {
+        self.log(logging.WARNING, 'server_overwhelmed', context={
             'context': context,
             'traceback': traceback.format_exc()
         })
+
+
+class DatabaseError(TitledException):
+    """A database error occurred that wasn't caught by the server."""
+
+    def __init__(self, exc: mysql.connector.errors.Error,
+                 title: str = 'Server database error',
+                 message: str = 'Sorry but a server error related to our '
+                                'database occurred. We have been notified and '
+                                'are currently working on a solution.',
+                 context: dict = None, logger: Logger = None):
+        super().__init__(title, message, 500, logger=logger)
+
+        # Log the incident.
+        self.log(logging.ERROR, 'mysql_error',
+                 f'{exc.__class__.__name__}: {exc.msg}',
+                 context={
+                     'context': context,
+                     'mysql_msg': str(exc),
+                     'traceback': traceback.format_exc()
+                 })
 
 
 class ScrapingReturnedError(TitledException):
@@ -149,7 +176,7 @@ class ScrapingBrowserError(TitledException):
         self.data: dict = carrier.as_dict()
 
         # Log the incident.
-        self.log(logging.ERROR, 'scrape_error', {
+        self.log(logging.ERROR, 'scrape_error', context={
             'context': carrier.as_dict(internals=True),
             'traceback': self.trace
         })

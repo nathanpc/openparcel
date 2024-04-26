@@ -11,7 +11,7 @@ import time
 from typing import Optional
 
 import DrissionPage.errors
-import mysql
+import mysql.connector.errors
 import yaml
 from flask import Flask, request, g
 from mysql.connector import MySQLConnection
@@ -22,7 +22,7 @@ from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError,
-                                   TrackingCodeInvalid, ServerOverwhelmedError)
+                                   TrackingCodeInvalid, ServerOverwhelmedError, DatabaseError)
 from openparcel.scraper import ScrapingPool, DuplicateScrapingOperation
 
 # Get our application's logger instance.
@@ -77,6 +77,16 @@ def handle_title_exception(exc: TitledException):
     """Handles uncaught exceptions that were made to provide a response to the
     user."""
     return exc.resp_dict(req_uuid=request_uuid()), exc.status_code
+
+
+@app.errorhandler(mysql.connector.errors.Error)
+def handle_mysql_exception(exc: mysql.connector.errors.Error):
+    """Handles uncaught database exceptions."""
+    # TODO: Get request context logger.
+    logger = root_logger.for_subsystem('mysql_exception')
+    return handle_title_exception(DatabaseError(exc, context={
+        'req_uuid': request_uuid()
+    }, logger=logger))
 
 
 def is_authenticated() -> bool:
