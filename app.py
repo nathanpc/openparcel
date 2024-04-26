@@ -601,11 +601,11 @@ def register():
             status_code=400)
 
     # Check if the username is clean.
-    if not re.match(r'^[a-z0-9_]+$', username):
+    if not re.match(r'^[a-z][a-z0-9_]+$', username):
         raise TitledException(
             title='Invalid username',
             message='Username must contain only lowercase letters, numbers, '
-                    'and underscore.',
+                    'and underscores.',
             status_code=422)
 
     # Check if username is long enough.
@@ -617,7 +617,7 @@ def register():
             status_code=422)
 
     # Check if the password is long enough.
-    if 6 < len(password) < 250:
+    if 250 < len(password) < 6:
         raise TitledException(
             title='Invalid password',
             message='Password must have at least 6 characters and no more than '
