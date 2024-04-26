@@ -12,6 +12,7 @@ class CarrierCTT(BrowserBaseCarrier):
         'https://appserver.ctt.pt/CustomerArea/PublicArea_Detail?' \
         'ObjectCodeInput=${tracking_code}&SearchInput=${tracking_code}'
     accent_color = '#DE0024'
+    outdated_period_days: int = 30 * 2
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)

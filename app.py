@@ -374,10 +374,9 @@ async def track(carrier_id: str, code: str, force: bool = False,
         cur = conn.cursor()
         cur.execute(
             'SELECT id FROM parcels WHERE (carrier = %s) '
-            ' AND (tracking_code = %s) '
-            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < %s) '
+            ' AND (tracking_code = %s) AND (DATEDIFF(NOW(), created) < %s) '
             'ORDER BY created DESC LIMIT 1',
-            (carrier_id, code, carrier.outdated_period_secs))
+            (carrier_id, code, carrier.outdated_period_days))
         row = cur.fetchone()
         cur.close()
 
@@ -395,20 +394,18 @@ async def track(carrier_id: str, code: str, force: bool = False,
             'SELECT parcels.id, parcels.carrier, parcels.tracking_code, '
             ' parcels.slug, parcels.created, history_cache.retrieved, '
             ' history_cache.data, user_parcels.name, user_parcels.archived, '
-            ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+            ' UNIX_TIMESTAMP(history_cache.retrieved) - UNIX_TIMESTAMP() diff '
             'FROM history_cache '
             'LEFT JOIN parcels ON history_cache.parcel_id = parcels.id '
             'LEFT JOIN user_parcels '
             ' ON (history_cache.parcel_id = user_parcels.parcel_id) '
             ' AND (user_parcels.user_id = %s) '
-            f'WHERE {cond} '
-            ' AND ((unixepoch(\'now\') - unixepoch(parcels.created)) < %s)'
+            f'WHERE {cond} AND (DATEDIFF(NOW(), created) < %s)'
             'ORDER BY history_cache.retrieved DESC LIMIT 1',
-            (user_id(),) + cond_values + (carrier.outdated_period_secs,))
+            (user_id(),) + cond_values + (carrier.outdated_period_days,))
         row = cur.fetchone()
         cur.close()
 
-        # Get the parcel ID.
         if row is not None:
             carrier.slug = row[3]
             carrier.archived = bool(row[-2]) if row[-2] is not None else False
@@ -424,8 +421,8 @@ async def track(carrier_id: str, code: str, force: bool = False,
                     db_id=row[0],
                     cache=json.loads(row[6]),
                     slug=row[3],
-                    created=datetime.datetime.fromisoformat(row[4]),
-                    last_updated=datetime.datetime.fromisoformat(row[5]),
+                    created=row[4],
+                    last_updated=row[5],
                     parcel_name=carrier.parcel_name,
                     archived=carrier.archived)
                 logger.info('parcel_cached',
@@ -456,8 +453,7 @@ async def track(carrier_id: str, code: str, force: bool = False,
         if carrier.db_id is None:
             # First time we are caching this parcel.
             cur.execute(
-                'INSERT OR IGNORE INTO parcels '
-                ' (carrier, tracking_code, created, slug) '
+                'INSERT INTO parcels (carrier, tracking_code, created, slug) '
                 'VALUES (%s, %s, %s, %s)',
                 (carrier_id, code, now.isoformat(), carrier.generate_slug()))
             conn.commit()
@@ -529,7 +525,7 @@ async def track_id(parcel_slug: str, force: bool = False):
         'SELECT user_parcels.name, user_parcels.archived, parcels.id, '
         ' parcels.carrier, parcels.tracking_code, parcels.slug, '
         ' parcels.created, history_cache.retrieved, history_cache.data, '
-        ' (unixepoch(history_cache.retrieved) - unixepoch(\'now\')) '
+        ' (UNIX_TIMESTAMP(history_cache.retrieved) - UNIX_TIMESTAMP()) diff '
         'FROM history_cache '
         'LEFT JOIN user_parcels '
         ' ON user_parcels.parcel_id = history_cache.parcel_id '
@@ -555,8 +551,8 @@ async def track_id(parcel_slug: str, force: bool = False):
         db_id=row[2],
         cache=json.loads(row[-2]),
         slug=row[5],
-        created=datetime.datetime.fromisoformat(row[6]),
-        last_updated=datetime.datetime.fromisoformat(row[7]),
+        created=row[6],
+        last_updated=row[7],
         parcel_name=row[0],
         archived=bool(row[1]))
 
@@ -1009,6 +1005,7 @@ def list_parcels():
     # Get the list from the database.
     conn = connect_db()
     cur = conn.cursor()
+    # TODO: Fix this query.
     cur.execute(
         'SELECT DISTINCT * FROM '
         ' (SELECT user_parcels.name, user_parcels.archived, parcels.id, '

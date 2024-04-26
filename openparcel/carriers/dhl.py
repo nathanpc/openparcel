@@ -11,6 +11,7 @@ class CarrierDHL(BrowserBaseCarrier):
     tracking_url_base = 'https://www.dhl.com/us-en/home/tracking.html?' \
                         'tracking-id=${tracking_code}&submit=1'
     accent_color = '#FFCC00'
+    outdated_period_days: int = 30 * 3
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)

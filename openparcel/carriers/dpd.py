@@ -11,6 +11,7 @@ class CarrierDPDPT(BrowserBaseCarrier):
     tracking_url_base = 'https://tracking.dpd.pt/en/getting-parcel/' \
                         'track-trace?reference=${tracking_code}'
     accent_color = '#DC1332'
+    outdated_period_days: int = 30 * 2
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)

@@ -24,7 +24,7 @@ class BaseCarrier:
     name: str = None
     tracking_url_base: str = None
     accent_color: str = '#D6BC9C'
-    outdated_period_secs: int = 60 * 60 * 24 * 30 * 6
+    outdated_period_days: int = 30 * 6
 
     def __init__(self, tracking_code: str = None):
         self.tracking_url: Template = Template(self.tracking_url_base)
@@ -63,12 +63,12 @@ class BaseCarrier:
 
     def created_delta(self) -> datetime.timedelta:
         """Gets the time delta between when the parcel was created and now."""
-        return datetime.datetime.now(datetime.UTC) - self.created
+        return datetime.datetime.now() - self.created
 
     def is_outdated(self) -> bool:
         """Checks if the parcel is outdated given its creation date."""
         return (self.created_delta() >
-                datetime.timedelta(seconds=self.outdated_period_secs))
+                datetime.timedelta(days=self.outdated_period_days))
 
     def from_cache(self, db_id: int, cache: dict, created: datetime.datetime,
                    last_updated: datetime.datetime, slug: str,
