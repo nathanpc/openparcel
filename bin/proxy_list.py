@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import atexit
+import inspect
 import json
 import string
 import random
@@ -12,6 +14,7 @@ from typing import Mapping
 import requests
 import DrissionPage.errors
 from mysql.connector import MySQLConnection
+from requests import HTTPError
 
 import config
 from openparcel.carriers import carriers
@@ -395,13 +398,66 @@ class WebShare(ProxyList):
                 conn=self.conn))
 
 
+def fetch_proxies(providers: list[str] = None):
+    """Fetches all the configured proxy lists."""
+    # Get providers from configuration if none were provided.
+    if providers is None:
+        providers = []
+        for provider in config.proxy('api_keys'):
+            providers.append(provider.lower())
+
+    # Go through our list of classes and only use the ones in the provider list.
+    for name, obj in inspect.getmembers(sys.modules[__name__], inspect.isclass):
+        if issubclass(obj, ProxyList) and name != 'ProxyList':
+            if name.lower() in providers:
+                try:
+                    print(f'Fetching proxies from {name}...')
+                    proxies = obj(auto_save=True, conn=this.db_conn)
+                    proxies.load()
+                    print(f'Finished fetching proxies from {name}.')
+                except HTTPError as e:
+                    print(f'Failed to fetch proxies from {name}: {e}',
+                          file=sys.stderr)
+
+
+def refresh_proxies():
+    """Refreshes the cached proxy list."""
+    pass
+
+
+def exit_handler():
+    """Performs a couple of important tasks before exiting the program."""
+    # Ensure we close the database connection.
+    if this.db_conn is not None:
+        this.db_conn.close()
+        this.db_conn = None
+
+
 if __name__ == '__main__':
+    # Register exit handler.
+    atexit.register(exit_handler)
+
+    # Check if we have an argument.
+    command = 'fetch'
+    if len(sys.argv) > 1:
+        command = sys.argv[1].lower()
+
     # Connect to the database.
     this.db_conn = MySQLConnection(**config.db_conn())
 
-    # Get a new proxy list and save automatically.
-    proxies = WebShare(auto_save=True, conn=this.db_conn)
-    proxies.load()
+    match command:
+        case 'fetch':
+            # Check if we have forced a provider.
+            prov = None
+            if len(sys.argv) > 2:
+                prov = [sys.argv[2].lower()]
 
-    # Ensure we close the database connection.
-    this.db_conn.close()
+            # Fetch new proxies.
+            fetch_proxies(prov)
+        case 'refresh':
+            # Refresh our current list of proxies.
+            refresh_proxies()
+        case _:
+            # We don't know what you've requested.
+            print('Invalid command. Use "fetch" or "refresh".', file=sys.stderr)
+            exit(1)
