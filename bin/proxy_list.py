@@ -29,7 +29,7 @@ class Proxy:
     def __init__(self, addr: str, port: int, country: str, speed: int,
                  protocol: str, active: bool = True, db_id: int = None,
                  valid_carriers: list[dict] = None,
-                 conn: MySQLConnection = this.db_conn):
+                 conn: MySQLConnection = None):
         self.db_id: int = db_id
         self.addr: str = addr
         self.port: int = port
@@ -117,7 +117,7 @@ class Proxy:
         # Check the database if this object is already in it.
         cur = self.conn.cursor()
         cur.execute('SELECT id, active FROM proxies '
-                    'WHERE (addr = ?) AND (port = ?) AND (protocol = ?)',
+                    'WHERE (addr = %s) AND (port = %s) AND (protocol = %s)',
                     (self.addr, self.port, self.protocol))
         row = cur.fetchone()
         cur.close()
@@ -135,7 +135,7 @@ class Proxy:
         cur.execute(
             'INSERT INTO proxies'
             ' (addr, port, country, speed, protocol, active, carriers)'
-            ' VALUES (?, ?, ?, ?, ?, ?, ?)',
+            ' VALUES (%s, %s, %s, %s, %s, %s, %s)',
             (self.addr, self.port, self.country, self.speed, self.protocol,
              self.active, json.dumps(self.valid_carriers)))
         self.conn.commit()
@@ -400,7 +400,7 @@ if __name__ == '__main__':
     this.db_conn = MySQLConnection(**config.db_conn())
 
     # Get a new proxy list and save automatically.
-    proxies = WebShare(auto_save=True)
+    proxies = WebShare(auto_save=True, conn=this.db_conn)
     proxies.load()
 
     # Ensure we close the database connection.
