@@ -152,11 +152,11 @@ class Proxy:
 
 class ProxyList:
     """Generic proxy list provider class."""
+    url: str = None
 
-    def __init__(self, url: str, api_key: str = None, auto_save: bool = True,
+    def __init__(self, api_key: str = None, auto_save: bool = True,
                  conn: MySQLConnection = this.db_conn,
                  headers: Mapping[str, str | bytes] = None):
-        self.url: str = url
         self.list: list[Proxy] = []
         self.conn: MySQLConnection = conn
         self.auto_save: bool = auto_save
@@ -213,11 +213,11 @@ class ProxyList:
 
 class PubProxy(ProxyList):
     """Proxy list using PubProxy as the backend."""
+    url: str = 'http://pubproxy.com/api/proxy?format=json'
 
     def __init__(self, api_key: str = None, country_denylist: list = None,
                  auto_save: bool = True, conn: MySQLConnection = this.db_conn):
-        super().__init__('http://pubproxy.com/api/proxy?format=json',
-                         auto_save=auto_save, conn=conn, api_key=api_key)
+        super().__init__(api_key, auto_save=auto_save, conn=conn)
 
         # Build up the request URL.
         if self.api_key is not None:
@@ -257,12 +257,12 @@ class PubProxy(ProxyList):
 
 class Proxifly(ProxyList):
     """Proxy list using Proxifly as the backend."""
+    url: str = 'https://api.proxifly.dev/get-proxy'
 
     def __init__(self, api_key: str = None, quantity: int = 5,
                  auto_save: bool = True, conn: MySQLConnection = this.db_conn):
         # Initialize the parent class.
-        super().__init__('https://api.proxifly.dev/get-proxy', conn=conn,
-                         auto_save=auto_save, api_key=api_key,
+        super().__init__(api_key, conn=conn, auto_save=auto_save,
                          headers={'Content-Type': 'application/json'})
 
         # Set up the request parameters.
@@ -302,11 +302,11 @@ class Proxifly(ProxyList):
 
 class OpenProxySpace(ProxyList):
     """Proxy list using Open Proxy Space as the backend."""
+    url: str = 'https://api.openproxy.space/premium/json'
 
     def __init__(self, api_key: str = None, quantity: int = 5,
                  auto_save: bool = True, conn: MySQLConnection = this.db_conn):
-        super().__init__('https://api.openproxy.space/premium/json',
-                         auto_save=auto_save, conn=conn, api_key=api_key)
+        super().__init__(api_key, auto_save=auto_save, conn=conn)
 
         # Build up the request URL.
         self.url += (f'?apiKey={self.api_key}&amount={quantity}&smart=1'
@@ -370,13 +370,13 @@ class ProxyScrapeFree(ProxyList):
 
 class WebShare(ProxyList):
     """Proxy list using WebShare as the backend."""
+    url: str = 'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1'
 
     def __init__(self, api_key: str = None, quantity: int = 25,
                  auto_save: bool = True, conn: MySQLConnection = this.db_conn):
         # Initialize the parent class.
-        super().__init__('https://proxy.webshare.io/api/v2/proxy/list/?'
-                         f'mode=direct&page=1&page_size={quantity}', conn=conn,
-                         auto_save=auto_save, api_key=api_key)
+        super().__init__(api_key, conn=conn, auto_save=auto_save)
+        self.url += f'&page_size={quantity}'
         self.common_url = self.url
 
         # Set up the authentication token in the headers.
