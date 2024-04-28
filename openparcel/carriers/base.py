@@ -5,6 +5,7 @@ import json
 import random
 import re
 import secrets
+import traceback
 
 from os.path import abspath, dirname, exists
 from string import Template
@@ -256,12 +257,18 @@ class BrowserBaseCarrier(BaseCarrier):
         if type(elem) is not NoneElement:
             return
 
-        # Load the necessary scripts.
-        self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
-        self.page.run_js_loaded(self._get_scraping_js(), as_expr=True)
-        self.page.run_js_loaded('OpenParcel.dropTokenElement();')
-        self.debug_print(
-            f'Scraping scripts loaded at {datetime.datetime.now().time()}')
+        try:
+            # Load the necessary scripts.
+            self.page.run_js_loaded(self._get_scraping_js('utils'), as_expr=True)
+            self.page.run_js_loaded(self._get_scraping_js(), as_expr=True)
+            self.page.run_js_loaded('OpenParcel.dropTokenElement();')
+            self.debug_print(
+                f'Scraping scripts loaded at {datetime.datetime.now().time()}')
+        except TimeoutError:
+            raise ScrapingReturnedError({
+                'code': {'id': 5, 'name': 'ProxyTimeout'},
+                'data': {'traceback': traceback.format_exc()}
+            })
 
     def _get_scraping_js(self, name: str = None) -> str:
         """Gets the Javascript script to run in order to scrape the web page."""

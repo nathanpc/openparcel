@@ -138,6 +138,8 @@ class ScrapingReturnedError(TitledException):
                 return 'Too many requests'
             case 'Blocked':
                 return 'Blocked by carrier'
+            case 'ProxyTimeout':
+                return 'Proxy server timeout'
 
         self.status_code = 500
         return 'Unknown error'
@@ -155,6 +157,9 @@ class ScrapingReturnedError(TitledException):
                 return ('We have been blocked by the carrier for trying to '
                         'scrape their website. Try again later after the'
                         'system\'s proxy list has been refreshed.')
+            case 'ProxyTimeout':
+                return ('The proxy server used to perform the request to the '
+                        'carrier took too long to respond. Try again later.')
 
         return 'An unknown, but expected, error occurred while scraping the ' \
                'website.'

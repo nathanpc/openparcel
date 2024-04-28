@@ -768,6 +768,10 @@ class ParcelError {
 		Blocked: {
 			id: 4,
 			name: "Blocked"
+		},
+		ProxyTimeout: {
+			id: 5,
+			name: "ProxyTimeout"
 		}
 	};
 
