@@ -441,6 +441,30 @@ class WebShare(ProxyList):
                 conn=self.conn))
 
 
+class FileProxyList(ProxyList):
+    """Proxy list from a file."""
+
+    def __init__(self, protocol: str, file: str, auto_save: bool = True,
+                 conn: MySQLConnection = this.db_conn):
+        super().__init__(auto_save=auto_save, conn=conn)
+        self.protocol = protocol
+        self.file = file
+
+    def load(self) -> list[Proxy]:
+        with open(self.file, 'r') as f:
+            for line in f:
+                line = line.split(':')
+                self.append(Proxy(
+                    addr=line[0],
+                    port=int(line[1]),
+                    country='ZZ',
+                    speed=-1,
+                    protocol=self.protocol,
+                    conn=self.conn))
+
+        return self.list
+
+
 def fetch_proxies(providers: list[str] = None):
     """Fetches all the configured proxy lists."""
     # Get providers from configuration if none were provided.
@@ -451,7 +475,8 @@ def fetch_proxies(providers: list[str] = None):
 
     # Go through our list of classes and only use the ones in the provider list.
     for name, obj in inspect.getmembers(sys.modules[__name__], inspect.isclass):
-        if issubclass(obj, ProxyList) and name != 'ProxyList':
+        if (issubclass(obj, ProxyList) and name != 'ProxyList'
+                and name != 'FileProxyList'):
             if name.lower() in providers:
                 try:
                     print(f'Fetching proxies from {name}...')
@@ -470,6 +495,12 @@ def refresh_proxies():
         if not proxy.test():
             proxy.active = False
         proxy.save()
+
+
+def import_proxies(protocol: str, file: str):
+    """Imports a proxy list from a file."""
+    proxies = FileProxyList(protocol, file, conn=this.db_conn)
+    proxies.load()
 
 
 def exit_handler():
@@ -515,6 +546,12 @@ if __name__ == '__main__':
         case 'refresh':
             # Refresh our current list of proxies.
             refresh_proxies()
+        case 'import':
+            # Import a list from a file.
+            if len(sys.argv) < 4:
+                usage(sys.stderr)
+                exit(1)
+            import_proxies(sys.argv[2].lower(), sys.argv[3])
         case 'help':
             usage()
         case _:
