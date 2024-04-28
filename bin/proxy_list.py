@@ -480,6 +480,17 @@ def exit_handler():
         this.db_conn = None
 
 
+def usage(out: TextIO = sys.stdout):
+    """How to use this script."""
+    print(f'Usage: {sys.argv[0]} command [options]', file=out)
+    print(file=out)
+    print('Available commands:', file=out)
+    print('\tfetch [provider]       -  Fetches proxies from aproxy list provider.', file=out)
+    print('\trefresh                -  Refreshes the list of cached proxies.', file=out)
+    print('\timport [proto] [file]  -  Loads proxies from a file.', file=out)
+    print('\thelp                   -  What you are currently seeing.', file=out)
+
+
 if __name__ == '__main__':
     # Register exit handler.
     atexit.register(exit_handler)
@@ -504,7 +515,10 @@ if __name__ == '__main__':
         case 'refresh':
             # Refresh our current list of proxies.
             refresh_proxies()
+        case 'help':
+            usage()
         case _:
             # We don't know what you've requested.
-            print('Invalid command. Use "fetch" or "refresh".', file=sys.stderr)
+            print('Invalid command.\n', file=sys.stderr)
+            usage(sys.stderr)
             exit(1)
