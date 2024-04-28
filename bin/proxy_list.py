@@ -7,6 +7,7 @@ import string
 import random
 import sys
 import time
+from multiprocessing import Lock, Pool
 
 from operator import itemgetter
 from typing import Mapping, TypeVar, TextIO
@@ -199,18 +200,21 @@ class ProxyList:
 
     def __init__(self, api_key: str = None, auto_save: bool = True,
                  conn: MySQLConnection = this.db_conn,
-                 headers: Mapping[str, str | bytes] = None):
+                 headers: Mapping[str, str | bytes] = None,
+                 test_workers: int = 8):
         self.list: list[Proxy] = []
         self.conn: MySQLConnection = conn
         self.auto_save: bool = auto_save
         self.headers: Mapping[str, str | bytes] = headers
+        self.num_workers: int = test_workers
+        self._lock: Lock = Lock()
 
         # Import API key from configuration if needed.
         self._import_api_key(self.__class__.__name__, api_key)
 
-    def load(self) -> list[Proxy]:
+    def load(self, parallel: bool = True) -> list[Proxy]:
         """Loads the proxy list from its source."""
-        self._parse_response(self._fetch())
+        self._parse_response(self._fetch(), parallel=parallel)
         return self.list
 
     def append(self, server: Proxy) -> bool:
@@ -223,12 +227,25 @@ class ProxyList:
 
         # Test the proxy out before appending it to the list.
         if server.test():
+            # Acquire our process lock and append the server to the list.
+            self._lock.acquire()
             self.list.append(server)
-            if self.auto_save:
-                server.save()
+
+            # Automatically save the server to the database if asked for.
+            try:
+                if self.auto_save:
+                    server.save()
+            finally:
+                self._lock.release()
+
             return True
 
+        # Looks like this proxy server was a bust.
         return False
+
+    def set_test_workers(self, num_workers: int):
+        """Sets the number of proxy testing workers in the pool."""
+        self.num_workers = num_workers
 
     def _fetch(self) -> requests.Response:
         """Fetches the proxy list from somewhere."""
@@ -240,7 +257,8 @@ class ProxyList:
 
         return req
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response,
+                        parallel: bool = True):
         """Parses the proxy list response from the backend."""
         raise NotImplementedError
 
@@ -286,16 +304,25 @@ class PubProxy(ProxyList):
 
         return self.list
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response,
+                        parallel: bool = True):
         resp_json = response.json()
-        for item in resp_json['data']:
-            self.append(Proxy(
-                addr=item['ip'],
-                port=int(item['port']),
-                country=item['country'],
-                speed=int(item['speed']) * 1000,
-                protocol=item['type'],
-                conn=self.conn))
+        if parallel:
+            with Pool(processes=self.num_workers) as pool:
+                pool.map(self._append_item, resp_json['data'])
+        else:
+            for item in resp_json['data']:
+                self._append_item(item)
+
+    def _append_item(self, item: dict):
+        """Appends an item returned from the API into the proxy list."""
+        self.append(Proxy(
+            addr=item['ip'],
+            port=int(item['port']),
+            country=item['country'],
+            speed=int(item['speed']) * 1000,
+            protocol=item['type'],
+            conn=self.conn))
 
 
 class Proxifly(ProxyList):
@@ -331,16 +358,25 @@ class Proxifly(ProxyList):
 
         return req
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response,
+                        parallel: bool = True):
         resp_json = response.json()
-        for item in resp_json:
-            self.append(Proxy(
-                addr=item['ip'],
-                port=int(item['port']),
-                country=item['geolocation']['country'],
-                speed=int(item['score']) * 1000,
-                protocol=item['protocol'],
-                conn=self.conn))
+        if parallel:
+            with Pool(processes=self.num_workers) as pool:
+                pool.map(self._append_item, resp_json)
+        else:
+            for item in resp_json:
+                self._append_item(item)
+
+    def _append_item(self, item: dict):
+        """Appends an item returned from the API into the proxy list."""
+        self.append(Proxy(
+            addr=item['ip'],
+            port=int(item['port']),
+            country=item['geolocation']['country'],
+            speed=int(item['score']) * 1000,
+            protocol=item['protocol'],
+            conn=self.conn))
 
 
 class OpenProxySpace(ProxyList):
@@ -368,17 +404,33 @@ class OpenProxySpace(ProxyList):
 
         raise ValueError(f'Invalid protocol index: {index}')
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response,
+                        parallel: bool = True):
         resp_json = response.json()
+        proxies = []
+
+        # Build a flat proxy list.
         for item in resp_json:
             for proto_index in item['protocols']:
-                self.append(Proxy(
-                    addr=item['ip'],
-                    port=int(item['port']),
-                    country=item['country'],
-                    speed=int(item['timeout']),
-                    protocol=self.proto_from_index(proto_index),
-                    conn=self.conn))
+                item['proto'] = self.proto_from_index(proto_index)
+                proxies.append(item)
+
+        if parallel:
+            with Pool(processes=self.num_workers) as pool:
+                pool.map(self._append_item, proxies)
+        else:
+            for item in proxies:
+                self._append_item(item)
+
+    def _append_item(self, item: dict):
+        """Appends an item returned from the API into the proxy list."""
+        self.append(Proxy(
+            addr=item['ip'],
+            port=int(item['port']),
+            country=item['country'],
+            speed=int(item['timeout']),
+            protocol=item['proto'],
+            conn=self.conn))
 
 
 class ProxyScrapeFree(ProxyList):
@@ -391,24 +443,37 @@ class ProxyScrapeFree(ProxyList):
                '&proxy_format=protocolipport&format=json')
         super().__init__(auto_save=auto_save, conn=conn)
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response,
+                        parallel: bool = True):
         # Sort the response list by timeout.
         resp_json = response.json()
         proxy_list = sorted(resp_json['proxies'],
                             key=itemgetter('average_timeout'))
+        alive_proxies = []
 
+        # Filter out dead proxies.
         for item in proxy_list:
             # Ignore dead proxies.
             if not item['alive'] or not item['ssl']:
                 continue
+            alive_proxies.append(item)
 
-            self.append(Proxy(
-                addr=item['ip'],
-                port=int(item['port']),
-                country=item['ip_data']['countryCode'],
-                speed=round(item['average_timeout']),
-                protocol=item['protocol'],
-                conn=self.conn))
+        if parallel:
+            with Pool(processes=self.num_workers) as pool:
+                pool.map(self._append_item, alive_proxies)
+        else:
+            for item in alive_proxies:
+                self._append_item(item)
+
+    def _append_item(self, item: dict):
+        """Appends an item returned from the API into the proxy list."""
+        self.append(Proxy(
+            addr=item['ip'],
+            port=int(item['port']),
+            country=item['ip_data']['countryCode'],
+            speed=round(item['average_timeout']),
+            protocol=item['protocol'],
+            conn=self.conn))
 
 
 class WebShare(ProxyList):
@@ -429,16 +494,25 @@ class WebShare(ProxyList):
         self.url = f'{self.common_url}&page={page}'
         return super().load()
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response,
+                        parallel: bool = True):
         resp_json = response.json()
-        for item in resp_json['results']:
-            self.append(Proxy(
-                addr=item['proxy_address'],
-                port=int(item['port']),
-                country=item['country_code'],
-                speed=-1,
-                protocol='socks5',
-                conn=self.conn))
+        if parallel:
+            with Pool(processes=self.num_workers) as pool:
+                pool.map(self._append_item, resp_json['results'])
+        else:
+            for item in resp_json['results']:
+                self._append_item(item)
+
+    def _append_item(self, item: dict):
+        """Appends an item returned from the API into the proxy list."""
+        self.append(Proxy(
+            addr=item['proxy_address'],
+            port=int(item['port']),
+            country=item['country_code'],
+            speed=-1,
+            protocol='socks5',
+            conn=self.conn))
 
 
 class FileProxyList(ProxyList):
@@ -450,19 +524,34 @@ class FileProxyList(ProxyList):
         self.protocol = protocol
         self.file = file
 
-    def load(self) -> list[Proxy]:
+    def load(self, parallel: bool = True) -> list[Proxy]:
+        proxies = []
+
+        # Read proxies from file.
         with open(self.file, 'r') as f:
             for line in f:
                 line = line.split(':')
-                self.append(Proxy(
-                    addr=line[0],
-                    port=int(line[1]),
-                    country='ZZ',
-                    speed=-1,
-                    protocol=self.protocol,
-                    conn=self.conn))
+                proxies.append((line[0], int(line[1])))
+
+        # Generate the proxy list.
+        if parallel:
+            with Pool(processes=self.num_workers) as pool:
+                pool.map(self._append_item, proxies)
+        else:
+            for item in proxies:
+                self._append_item(item)
 
         return self.list
+
+    def _append_item(self, line: tuple[str, int]):
+        """Appends an item returned from the API into the proxy list."""
+        self.append(Proxy(
+            addr=line[0],
+            port=line[1],
+            country='ZZ',
+            speed=-1,
+            protocol=self.protocol,
+            conn=self.conn))
 
 
 def fetch_proxies(providers: list[str] = None):
