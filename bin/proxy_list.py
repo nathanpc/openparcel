@@ -9,7 +9,7 @@ import sys
 import time
 
 from operator import itemgetter
-from typing import Mapping
+from typing import Mapping, TypeVar, TextIO
 
 import requests
 import DrissionPage.errors
@@ -24,6 +24,9 @@ from openparcel.exceptions import ScrapingReturnedError
 # Module context.
 this = sys.modules[__name__]
 this.db_conn = None
+
+# Typing hints.
+TProxy = TypeVar('TProxy', bound='Proxy')
 
 
 class Proxy:
@@ -47,8 +50,31 @@ class Proxy:
         if self.valid_carriers is None:
             self.valid_carriers = []
 
+    @staticmethod
+    def list(conn: MySQLConnection) -> list[TProxy]:
+        """Gets the entire list of available proxies."""
+        proxies = []
+
+        # Get the list from the database.
+        cur = conn.cursor()
+        cur.execute('SELECT * FROM proxies WHERE (active = %s)', (True,))
+        for row in cur:
+            proxies.append(Proxy.from_row(row, conn=conn))
+        cur.close()
+        return proxies
+
+    @staticmethod
+    def from_row(row: tuple, conn: MySQLConnection = None) -> TProxy:
+        """Builds up a Proxy object from a database row."""
+        return Proxy(db_id=row[0], addr=row[1], port=row[2], country=row[3],
+                     speed=row[4], protocol=row[5], active=bool(row[6]),
+                     valid_carriers=json.loads(row[7]), conn=conn)
+
     def test(self) -> bool:
         """Perform a cursory test of the proxy server."""
+        # Ensure we have a clean slate.
+        self.valid_carriers = []
+
         # Go through available carriers.
         for carrier in carriers():
             # Generate a random tracking code.
@@ -83,6 +109,10 @@ class Proxy:
                     case 'RateLimiting' | 'Blocked':
                         # Blocked by the carrier's anti-bot measures.
                         print('BLOCKED')
+                        continue
+                    case 'ProxyTimeout':
+                        # Proxy is complete garbage.
+                        print('TIMEOUT')
                         continue
                     case 'ParcelNotFound' | 'InvalidTrackingCode':
                         # Looks like it is a valid proxy!
@@ -133,16 +163,29 @@ class Proxy:
         if self.conn is None:
             raise AssertionError('Database not available for saving')
 
+        # Check if a refresh failed.
+        if len(self.valid_carriers) == 0:
+            self.active = False
+
+        # Insert or update database record?
+        params = (self.addr, self.port, self.country, self.speed, self.protocol,
+                  self.active, json.dumps(self.valid_carriers))
+        if self.db_id is not None:
+            stmt = ('UPDATE proxies SET  addr = %s, port = %s, country = %s, '
+                    ' speed = %s, protocol = %s, active = %s, carriers = %s '
+                    'WHERE id = %s')
+            params += (self.db_id,)
+        else:
+            stmt = ('INSERT INTO proxies '
+                    '(addr, port, country, speed, protocol, active, carriers) '
+                    'VALUES (%s, %s, %s, %s, %s, %s, %s)')
+
         # Insert the object into the database.
         cur = self.conn.cursor()
-        cur.execute(
-            'INSERT INTO proxies'
-            ' (addr, port, country, speed, protocol, active, carriers)'
-            ' VALUES (%s, %s, %s, %s, %s, %s, %s)',
-            (self.addr, self.port, self.country, self.speed, self.protocol,
-             self.active, json.dumps(self.valid_carriers)))
+        cur.execute(stmt, params)
         self.conn.commit()
-        self.db_id = cur.lastrowid
+        if self.db_id is None:
+            self.db_id = cur.lastrowid
         cur.close()
 
     def as_str(self) -> str:
@@ -346,7 +389,7 @@ class ProxyScrapeFree(ProxyList):
         url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
                f'request=displayproxies&protocol=all&timeout={timeout}'
                '&proxy_format=protocolipport&format=json')
-        super().__init__(url, auto_save=auto_save, conn=conn)
+        super().__init__(auto_save=auto_save, conn=conn)
 
     def _parse_response(self, response: requests.Response):
         # Sort the response list by timeout.
@@ -422,7 +465,11 @@ def fetch_proxies(providers: list[str] = None):
 
 def refresh_proxies():
     """Refreshes the cached proxy list."""
-    pass
+    for proxy in Proxy.list(this.db_conn):
+        # Retest the proxy.
+        if not proxy.test():
+            proxy.active = False
+        proxy.save()
 
 
 def exit_handler():
