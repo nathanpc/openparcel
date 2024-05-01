@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 
 import atexit
+import concurrent.futures
 import inspect
 import json
 import string
 import random
 import sys
 import time
-from multiprocessing import Lock, Pool
+from concurrent.futures import ThreadPoolExecutor
 
 from operator import itemgetter
+from threading import Lock
 from typing import Mapping, TypeVar, TextIO
 
 import requests
@@ -284,7 +286,6 @@ class PubProxy(ProxyList):
         if self.api_key is not None:
             self.url += '&api=' + self.api_key
         self.url += '&last_check=30'
-        self.url += '&speed=10'
         self.url += f'&limit={5 if self.api_key is None else 20}'
         if country_denylist is not None:
             self.url += '&not_country=' + ','.join(country_denylist)
@@ -308,21 +309,25 @@ class PubProxy(ProxyList):
                         parallel: bool = True):
         resp_json = response.json()
         if parallel:
-            with Pool(processes=self.num_workers) as pool:
-                pool.map(self._append_item, resp_json['data'])
+            with ThreadPoolExecutor(max_workers=self.num_workers) as pool:
+                futures = [pool.submit(self._append_item, proxy)
+                           for proxy in resp_json['data']]
+                concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
             for item in resp_json['data']:
                 self._append_item(item)
 
     def _append_item(self, item: dict):
         """Appends an item returned from the API into the proxy list."""
-        self.append(Proxy(
-            addr=item['ip'],
-            port=int(item['port']),
-            country=item['country'],
-            speed=int(item['speed']) * 1000,
-            protocol=item['type'],
-            conn=self.conn))
+        with MySQLConnection(**config.db_conn()) as conn:
+            self.append(Proxy(
+                addr=item['ip'],
+                port=int(item['port']),
+                country=item['country'],
+                speed=int(item['speed']) * 1000,
+                protocol=item['type'],
+                conn=conn))
 
 
 class Proxifly(ProxyList):
@@ -362,21 +367,25 @@ class Proxifly(ProxyList):
                         parallel: bool = True):
         resp_json = response.json()
         if parallel:
-            with Pool(processes=self.num_workers) as pool:
-                pool.map(self._append_item, resp_json)
+            with ThreadPoolExecutor(max_workers=self.num_workers) as pool:
+                futures = [pool.submit(self._append_item, proxy)
+                           for proxy in resp_json]
+                concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
             for item in resp_json:
                 self._append_item(item)
 
     def _append_item(self, item: dict):
         """Appends an item returned from the API into the proxy list."""
-        self.append(Proxy(
-            addr=item['ip'],
-            port=int(item['port']),
-            country=item['geolocation']['country'],
-            speed=int(item['score']) * 1000,
-            protocol=item['protocol'],
-            conn=self.conn))
+        with MySQLConnection(**config.db_conn()) as conn:
+            self.append(Proxy(
+                addr=item['ip'],
+                port=int(item['port']),
+                country=item['geolocation']['country'],
+                speed=int(item['score']) * 1000,
+                protocol=item['protocol'],
+                conn=conn))
 
 
 class OpenProxySpace(ProxyList):
@@ -416,21 +425,25 @@ class OpenProxySpace(ProxyList):
                 proxies.append(item)
 
         if parallel:
-            with Pool(processes=self.num_workers) as pool:
-                pool.map(self._append_item, proxies)
+            with ThreadPoolExecutor(max_workers=self.num_workers) as pool:
+                futures = [pool.submit(self._append_item, proxy)
+                           for proxy in proxies]
+                concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
             for item in proxies:
                 self._append_item(item)
 
     def _append_item(self, item: dict):
         """Appends an item returned from the API into the proxy list."""
-        self.append(Proxy(
-            addr=item['ip'],
-            port=int(item['port']),
-            country=item['country'],
-            speed=int(item['timeout']),
-            protocol=item['proto'],
-            conn=self.conn))
+        with MySQLConnection(**config.db_conn()) as conn:
+            self.append(Proxy(
+                addr=item['ip'],
+                port=int(item['port']),
+                country=item['country'],
+                speed=int(item['timeout']),
+                protocol=item['proto'],
+                conn=conn))
 
 
 class ProxyScrapeFree(ProxyList):
@@ -459,21 +472,25 @@ class ProxyScrapeFree(ProxyList):
             alive_proxies.append(item)
 
         if parallel:
-            with Pool(processes=self.num_workers) as pool:
-                pool.map(self._append_item, alive_proxies)
+            with ThreadPoolExecutor(max_workers=self.num_workers) as pool:
+                futures = [pool.submit(self._append_item, proxy)
+                           for proxy in alive_proxies]
+                concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
             for item in alive_proxies:
                 self._append_item(item)
 
     def _append_item(self, item: dict):
         """Appends an item returned from the API into the proxy list."""
-        self.append(Proxy(
-            addr=item['ip'],
-            port=int(item['port']),
-            country=item['ip_data']['countryCode'],
-            speed=round(item['average_timeout']),
-            protocol=item['protocol'],
-            conn=self.conn))
+        with MySQLConnection(**config.db_conn()) as conn:
+            self.append(Proxy(
+                addr=item['ip'],
+                port=int(item['port']),
+                country=item['ip_data']['countryCode'],
+                speed=round(item['average_timeout']),
+                protocol=item['protocol'],
+                conn=conn))
 
 
 class WebShare(ProxyList):
@@ -498,21 +515,25 @@ class WebShare(ProxyList):
                         parallel: bool = True):
         resp_json = response.json()
         if parallel:
-            with Pool(processes=self.num_workers) as pool:
-                pool.map(self._append_item, resp_json['results'])
+            with ThreadPoolExecutor(max_workers=self.num_workers) as pool:
+                futures = [pool.submit(self._append_item, proxy)
+                           for proxy in resp_json['results']]
+                concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
             for item in resp_json['results']:
                 self._append_item(item)
 
     def _append_item(self, item: dict):
         """Appends an item returned from the API into the proxy list."""
-        self.append(Proxy(
-            addr=item['proxy_address'],
-            port=int(item['port']),
-            country=item['country_code'],
-            speed=-1,
-            protocol='socks5',
-            conn=self.conn))
+        with MySQLConnection(**config.db_conn()) as conn:
+            self.append(Proxy(
+                addr=item['proxy_address'],
+                port=int(item['port']),
+                country=item['country_code'],
+                speed=-1,
+                protocol='socks5',
+                conn=conn))
 
 
 class FileProxyList(ProxyList):
@@ -535,8 +556,11 @@ class FileProxyList(ProxyList):
 
         # Generate the proxy list.
         if parallel:
-            with Pool(processes=self.num_workers) as pool:
-                pool.map(self._append_item, proxies)
+            with ThreadPoolExecutor(max_workers=self.num_workers) as pool:
+                futures = [pool.submit(self._append_item, proxy)
+                           for proxy in proxies]
+                concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
             for item in proxies:
                 self._append_item(item)
@@ -545,13 +569,14 @@ class FileProxyList(ProxyList):
 
     def _append_item(self, line: tuple[str, int]):
         """Appends an item returned from the API into the proxy list."""
-        self.append(Proxy(
-            addr=line[0],
-            port=line[1],
-            country='ZZ',
-            speed=-1,
-            protocol=self.protocol,
-            conn=self.conn))
+        with MySQLConnection(**config.db_conn()) as conn:
+            self.append(Proxy(
+                addr=line[0],
+                port=line[1],
+                country='ZZ',
+                speed=-1,
+                protocol=self.protocol,
+                conn=conn))
 
 
 def fetch_proxies(providers: list[str] = None):
