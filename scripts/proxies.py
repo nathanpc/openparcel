@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import atexit
 import concurrent.futures
 import inspect
 import json
@@ -12,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from operator import itemgetter
 from threading import Lock
-from typing import Mapping, TypeVar, TextIO
+from typing import Mapping, TypeVar
 
 import requests
 import DrissionPage.errors
@@ -22,11 +21,7 @@ from requests import HTTPError
 import config
 from openparcel.carriers import carriers
 from openparcel.exceptions import ScrapingReturnedError
-
-
-# Module context.
-this = sys.modules[__name__]
-this.db_conn = None
+from scripts import Command, Argument
 
 # Typing hints.
 TProxy = TypeVar('TProxy', bound='Proxy')
@@ -201,7 +196,7 @@ class ProxyList:
     url: str = None
 
     def __init__(self, api_key: str = None, auto_save: bool = True,
-                 conn: MySQLConnection = this.db_conn,
+                 conn: MySQLConnection = None,
                  headers: Mapping[str, str | bytes] = None,
                  test_workers: int = 8):
         self.list: list[Proxy] = []
@@ -279,7 +274,7 @@ class PubProxy(ProxyList):
     url: str = 'http://pubproxy.com/api/proxy?format=json'
 
     def __init__(self, api_key: str = None, country_denylist: list = None,
-                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
+                 auto_save: bool = True, conn: MySQLConnection = None):
         super().__init__(api_key, auto_save=auto_save, conn=conn)
 
         # Build up the request URL.
@@ -335,7 +330,7 @@ class Proxifly(ProxyList):
     url: str = 'https://api.proxifly.dev/get-proxy'
 
     def __init__(self, api_key: str = None, quantity: int = 5,
-                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
+                 auto_save: bool = True, conn: MySQLConnection = None):
         # Initialize the parent class.
         super().__init__(api_key, conn=conn, auto_save=auto_save,
                          headers={'Content-Type': 'application/json'})
@@ -393,7 +388,7 @@ class OpenProxySpace(ProxyList):
     url: str = 'https://api.openproxy.space/premium/json'
 
     def __init__(self, api_key: str = None, quantity: int = 5,
-                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
+                 auto_save: bool = True, conn: MySQLConnection = None):
         super().__init__(api_key, auto_save=auto_save, conn=conn)
 
         # Build up the request URL.
@@ -450,7 +445,7 @@ class ProxyScrapeFree(ProxyList):
     """Proxy list using ProxyScrape freebies list as the backend."""
 
     def __init__(self, timeout: int = 8000, auto_save: bool = True,
-                 conn: MySQLConnection = this.db_conn):
+                 conn: MySQLConnection = None):
         url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
                f'request=displayproxies&protocol=all&timeout={timeout}'
                '&proxy_format=protocolipport&format=json')
@@ -498,7 +493,7 @@ class WebShare(ProxyList):
     url: str = 'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1'
 
     def __init__(self, api_key: str = None, quantity: int = 25,
-                 auto_save: bool = True, conn: MySQLConnection = this.db_conn):
+                 auto_save: bool = True, conn: MySQLConnection = None):
         # Initialize the parent class.
         super().__init__(api_key, conn=conn, auto_save=auto_save)
         self.url += f'&page_size={quantity}'
@@ -540,7 +535,7 @@ class FileProxyList(ProxyList):
     """Proxy list from a file."""
 
     def __init__(self, protocol: str, file: str, auto_save: bool = True,
-                 conn: MySQLConnection = this.db_conn):
+                 conn: MySQLConnection = None):
         super().__init__(auto_save=auto_save, conn=conn)
         self.protocol = protocol
         self.file = file
@@ -579,74 +574,77 @@ class FileProxyList(ProxyList):
                 conn=conn))
 
 
-def fetch_proxies(providers: list[str] = None):
-    """Fetches all the configured proxy lists."""
-    # Get providers from configuration if none were provided.
-    if providers is None:
-        providers = []
-        for provider in config.proxy('api_keys'):
-            providers.append(provider.lower())
+class ProxiesCommand(Command):
+    """The proxy management command."""
+    name = 'proxy'
 
-    # Go through our list of classes and only use the ones in the provider list.
-    for name, obj in inspect.getmembers(sys.modules[__name__], inspect.isclass):
-        if (issubclass(obj, ProxyList) and name != 'ProxyList'
-                and name != 'FileProxyList'):
-            if name.lower() in providers:
-                try:
-                    print(f'Fetching proxies from {name}...')
-                    proxies = obj(auto_save=True, conn=this.db_conn)
-                    proxies.load()
-                    print(f'Finished fetching proxies from {name}.')
-                except HTTPError as e:
-                    print(f'Failed to fetch proxies from {name}: {e}',
-                          file=sys.stderr)
+    def __init__(self, parent: str = None):
+        super().__init__(parent)
+        self.enable_exit_handler()
 
+        # Connect to the database.
+        self.db_conn = MySQLConnection(**config.db_conn())
 
-def refresh_proxies():
-    """Refreshes the cached proxy list."""
-    for proxy in Proxy.list(this.db_conn):
-        # Retest the proxy.
-        if not proxy.test():
-            proxy.active = False
-        proxy.save()
+        # TODO: Handle default arguments.
+        # Add default actions.
+        self.add_action('fetch', 'Fetches proxies from aproxy list provider',
+                        args=[Argument('provider')])
+        self.add_action('refresh', 'Refreshes the list of cached proxies')
+        self.add_action('import', 'Loads proxies from a file',
+                        args=[Argument('proto'), Argument('file')])
 
+    def _exit_handler(self):
+        # Ensure we close the database connection.
+        if self.db_conn is not None:
+            self.db_conn.close()
+            self.db_conn = None
 
-def import_proxies(protocol: str, file: str):
-    """Imports a proxy list from a file."""
-    proxies = FileProxyList(protocol, file, conn=this.db_conn)
-    proxies.load()
+    def fetch_proxies(self, providers: list[str] = None):
+        """Fetches all the configured proxy lists."""
+        # Get providers from configuration if none were provided.
+        if providers is None:
+            providers = []
+            for provider in config.proxy('api_keys'):
+                providers.append(provider.lower())
 
+        # Go through our list of classes and only use the ones in the provider list.
+        for name, obj in inspect.getmembers(sys.modules[__name__], inspect.isclass):
+            if (issubclass(obj, ProxyList) and name != 'ProxyList'
+                    and name != 'FileProxyList'):
+                if name.lower() in providers:
+                    try:
+                        print(f'Fetching proxies from {name}...')
+                        proxies = obj(auto_save=True, conn=self.db_conn)
+                        proxies.load()
+                        print(f'Finished fetching proxies from {name}.')
+                    except HTTPError as e:
+                        print(f'Failed to fetch proxies from {name}: {e}',
+                              file=sys.stderr)
 
-def exit_handler():
-    """Performs a couple of important tasks before exiting the program."""
-    # Ensure we close the database connection.
-    if this.db_conn is not None:
-        this.db_conn.close()
-        this.db_conn = None
+    def refresh_proxies(self):
+        """Refreshes the cached proxy list."""
+        for proxy in Proxy.list(self.db_conn):
+            # Retest the proxy.
+            if not proxy.test():
+                proxy.active = False
+            proxy.save()
 
-
-def usage(out: TextIO = sys.stdout):
-    """How to use this script."""
-    print(f'Usage: {sys.argv[0]} command [options]', file=out)
-    print(file=out)
-    print('Available commands:', file=out)
-    print('\tfetch [provider]       -  Fetches proxies from aproxy list provider.', file=out)
-    print('\trefresh                -  Refreshes the list of cached proxies.', file=out)
-    print('\timport [proto] [file]  -  Loads proxies from a file.', file=out)
-    print('\thelp                   -  What you are currently seeing.', file=out)
+    def import_proxies(self, protocol: str, file: str):
+        """Imports a proxy list from a file."""
+        proxies = FileProxyList(protocol, file, conn=self.db_conn)
+        proxies.load()
 
 
 if __name__ == '__main__':
-    # Register exit handler.
-    atexit.register(exit_handler)
+    command = ProxiesCommand()
+    command.run()
+    exit(0)
 
+    # TODO: Handle default arguments.
     # Check if we have an argument.
     command = 'fetch'
     if len(sys.argv) > 1:
         command = sys.argv[1].lower()
-
-    # Connect to the database.
-    this.db_conn = MySQLConnection(**config.db_conn())
 
     match command:
         case 'fetch':
