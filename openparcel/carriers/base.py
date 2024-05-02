@@ -9,7 +9,7 @@ import traceback
 
 from os.path import abspath, dirname, exists
 from string import Template
-from typing import Optional, Self
+from typing import Optional, Self, TYPE_CHECKING
 
 from DrissionPage import ChromiumPage, ChromiumOptions
 from DrissionPage._elements.none_element import NoneElement
@@ -17,6 +17,10 @@ from DrissionPage.errors import WaitTimeoutError, JavaScriptError
 
 from openparcel.exceptions import (TrackingCodeNotFound, ScrapingJsNotFound,
                                    ScrapingReturnedError, TrackingCodeInvalid)
+
+# Ensure we have modules available only for type checking.
+if TYPE_CHECKING:
+    from openparcel.proxies import Proxy
 
 
 class BaseCarrier:
@@ -170,11 +174,11 @@ class BrowserBaseCarrier(BaseCarrier):
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)
-        self.proxy: Optional[str] = None
+        self.proxy: Optional['Proxy'] = None
         self.page: Optional[ChromiumPage] = None
         self.base_timeout: float = 10
 
-    def set_proxy(self, proxy: str):
+    def set_proxy(self, proxy: 'Proxy'):
         """Sets the proxy server for the scraping browser."""
         if self.page is not None:
             raise RuntimeError('Cannot set the proxy of a running browser')
@@ -235,7 +239,7 @@ class BrowserBaseCarrier(BaseCarrier):
             opts.set_retry(3)
             opts.set_argument('--disable-web-security')
             if self.proxy is not None:
-                opts.set_proxy(self.proxy)
+                opts.set_proxy(self.proxy.as_str())
 
             self.page = ChromiumPage(addr_or_opts=opts)
 

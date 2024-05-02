@@ -83,7 +83,7 @@ class Proxy:
             try:
                 # Set up the carrier and proxy settings.
                 carrier = carrier(code)
-                carrier.set_proxy(self.as_str())
+                carrier.set_proxy(self)
                 print(f'Testing proxy {self.as_str()} '
                       f'({round(self.speed / 1000)}) from {self.country} '
                       f'with {carrier.name}...', end=' ')
@@ -444,9 +444,9 @@ class ProxyScrapeFree(ProxyList):
 
     def __init__(self, timeout: int = 8000, auto_save: bool = True,
                  conn: MySQLConnection = None):
-        url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
-               f'request=displayproxies&protocol=all&timeout={timeout}'
-               '&proxy_format=protocolipport&format=json')
+        self.url = ('https://api.proxyscrape.com/v3/free-proxy-list/get?'
+                    f'request=displayproxies&protocol=all&timeout={timeout}'
+                    '&proxy_format=protocolipport&format=json')
         super().__init__(auto_save=auto_save, conn=conn)
 
     def _parse_response(self, response: requests.Response,
