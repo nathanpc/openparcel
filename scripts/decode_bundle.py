@@ -8,6 +8,7 @@ from Crypto.Cipher import AES
 from Crypto.Util import Counter
 
 import config
+from scripts import Command, Action
 
 
 class InputLineStream:
@@ -89,11 +90,41 @@ class RequestBundle:
         return bundle
 
 
-if __name__ == '__main__':
-    # Load key from configuration.
-    key = config.app('request_bundle_key')
+class DecodeAction(Action):
+    name = 'decode'
+    description = 'Decodes a carrier request bundle'
+    default = True
 
-    # Read the bundle and print its decoded output.
-    bc = RequestBundle(key)
-    data = bc.read_bundle()
-    print(f'\n\n{data}')
+    def __init__(self):
+        super().__init__()
+
+    def perform(self, enc_bundle: str = None):
+        bc = RequestBundle(self.parent.key)
+
+        # Read the bundle from stdin if it wasn't passed to us.
+        if enc_bundle is not None:
+            data = bc.decrypt(enc_bundle)
+        else:
+            data = bc.read_bundle()
+
+        # Print the decoded bundle.
+        print(f'\n\n{data}')
+
+
+class RequestBundleCommand(Command):
+    """The carrier request bundle decoder command."""
+    name = 'reqbundle'
+
+    def __init__(self, parent: str = None):
+        super().__init__(parent)
+
+        # Load key from configuration.
+        self.key = config.app('request_bundle_key')
+
+        # Add default actions.
+        self.add_action(DecodeAction())
+
+
+if __name__ == '__main__':
+    command = RequestBundleCommand()
+    command.run()
