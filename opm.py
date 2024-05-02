@@ -16,6 +16,10 @@ class HelpCommand(scripts.Command):
     def __init__(self, parent: str = None):
         super().__init__(parent)
 
+    def run(self):
+        # TODO: Show usage from parent.
+        print('TODO: Show usage from parent.')
+
 
 class Manager:
     description: str = 'The openparcel manager script'
@@ -26,6 +30,25 @@ class Manager:
         # Populate our available commands.
         self.populate_commands()
         self.commands.append(HelpCommand())
+
+    def run(self):
+        """Runs the manager from the command line."""
+        # Check if we were called without any commands.
+        if len(sys.argv) == 1:
+            self.usage(sys.stderr)
+            exit(1)
+
+        # Perform the requested command.
+        req_command = sys.argv[1].lower()
+        for cmd in self.commands:
+            if cmd.name == req_command:
+                cmd.run()
+                return
+
+        # Looks like it was an invalid command.
+        print(f'Unknown command {req_command}.\n', file=sys.stderr)
+        self.usage(sys.stderr)
+        exit(1)
 
     def populate_commands(self):
         """Populates the list of commands we have available."""
@@ -40,7 +63,8 @@ class Manager:
                     # Check if it's actually a command class.
                     if (inspect.isclass(mod_obj) and class_name != 'Command' and
                             issubclass(mod_obj, scripts.Command)):
-                        self.commands.append(mod_obj())
+                        # TODO: Pass self as the parent.
+                        self.commands.append(mod_obj(sys.argv[0]))
 
     def usage(self, out: TextIO = sys.stdout):
         """Prints a message on how to use this command."""
@@ -69,4 +93,4 @@ class Manager:
 
 if __name__ == '__main__':
     manager = Manager()
-    manager.usage()
+    manager.run()
