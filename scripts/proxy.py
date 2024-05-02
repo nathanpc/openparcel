@@ -81,6 +81,7 @@ class ImportAction(Action):
 class ProxiesCommand(Command):
     """The proxy management command."""
     name = 'proxy'
+    description = 'Manages our proxies and the proxy list'
 
     def __init__(self, parent: str = None):
         super().__init__(parent)

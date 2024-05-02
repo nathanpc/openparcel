@@ -114,6 +114,7 @@ class DecodeAction(Action):
 class RequestBundleCommand(Command):
     """The carrier request bundle decoder command."""
     name = 'reqbundle'
+    description = 'Deals with carrier request bundles'
 
     def __init__(self, parent: str = None):
         super().__init__(parent)

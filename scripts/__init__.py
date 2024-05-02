@@ -146,6 +146,7 @@ class HelpAction(Action):
 class Command:
     """Common command-line utility script interface."""
     name: str
+    description: str
 
     def __init_subclass__(cls, **kwargs):
         # Implement a method to have our post init method always called.
@@ -224,6 +225,14 @@ class Command:
         print('Available actions:', file=out)
         for action in self.actions:
             print(action.usage_long(padding), file=out)
+
+    def usage_short(self) -> str:
+        """How this command should be summarized in the manager usage."""
+        return self.name
+
+    def usage_long(self, padding: int = 0) -> str:
+        """How this argument should be represented in the manager usage."""
+        return f'\t{self.usage_short().ljust(padding)}  -  {self.description}.'
 
     def enable_exit_handler(self):
         """This command uses an exit handler."""
