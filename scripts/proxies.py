@@ -17,6 +17,7 @@ class FetchAction(Action):
     name = 'fetch'
     description = 'Fetches proxies from a proxy list provider'
     arguments = [Argument('provider')]
+    default = True
 
     def __init__(self):
         super().__init__()
