@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from operator import itemgetter
 from threading import Lock
-from typing import Mapping, TypeVar
+from typing import Mapping, TypeVar, Any
 
 import requests
 import DrissionPage.errors
@@ -21,7 +21,7 @@ from requests import HTTPError
 import config
 from openparcel.carriers import carriers
 from openparcel.exceptions import ScrapingReturnedError
-from scripts import Command, Argument
+from scripts import Command, Argument, Action
 
 # Typing hints.
 TProxy = TypeVar('TProxy', bound='Proxy')
@@ -574,32 +574,15 @@ class FileProxyList(ProxyList):
                 conn=conn))
 
 
-class ProxiesCommand(Command):
-    """The proxy management command."""
-    name = 'proxy'
+class FetchAction(Action):
+    name = 'fetch'
+    description = 'Fetches proxies from a proxy list provider'
+    arguments = [Argument('provider')]
 
-    def __init__(self, parent: str = None):
-        super().__init__(parent)
-        self.enable_exit_handler()
+    def __init__(self):
+        super().__init__()
 
-        # Connect to the database.
-        self.db_conn = MySQLConnection(**config.db_conn())
-
-        # TODO: Handle default arguments.
-        # Add default actions.
-        self.add_action('fetch', 'Fetches proxies from aproxy list provider',
-                        args=[Argument('provider')])
-        self.add_action('refresh', 'Refreshes the list of cached proxies')
-        self.add_action('import', 'Loads proxies from a file',
-                        args=[Argument('proto'), Argument('file')])
-
-    def _exit_handler(self):
-        # Ensure we close the database connection.
-        if self.db_conn is not None:
-            self.db_conn.close()
-            self.db_conn = None
-
-    def fetch_proxies(self, providers: list[str] = None):
+    def perform(self, providers: list[str] = None):
         """Fetches all the configured proxy lists."""
         # Get providers from configuration if none were provided.
         if providers is None:
@@ -614,60 +597,72 @@ class ProxiesCommand(Command):
                 if name.lower() in providers:
                     try:
                         print(f'Fetching proxies from {name}...')
-                        proxies = obj(auto_save=True, conn=self.db_conn)
+                        proxies = obj(auto_save=True, conn=self.parent.db_conn)
                         proxies.load()
                         print(f'Finished fetching proxies from {name}.')
                     except HTTPError as e:
                         print(f'Failed to fetch proxies from {name}: {e}',
                               file=sys.stderr)
 
-    def refresh_proxies(self):
-        """Refreshes the cached proxy list."""
-        for proxy in Proxy.list(self.db_conn):
+    def parse_arg(self, index: int, value: str) -> Any:
+        if index == 0:
+            # Convert providers to a proper list.
+            return value.lower().split(',')
+        
+        return super().parse_arg(index, value)
+
+
+class RefreshAction(Action):
+    name = 'refresh'
+    description = 'Refreshes the list of cached proxies'
+
+    def __init__(self):
+        super().__init__()
+
+    def perform(self):
+        for proxy in Proxy.list(self.parent.db_conn):
             # Retest the proxy.
             if not proxy.test():
                 proxy.active = False
             proxy.save()
 
-    def import_proxies(self, protocol: str, file: str):
-        """Imports a proxy list from a file."""
-        proxies = FileProxyList(protocol, file, conn=self.db_conn)
+
+class ImportAction(Action):
+    name = 'import'
+    description = 'Loads proxies from a file'
+    arguments = [Argument('proto', True), Argument('file', True)]
+
+    def __init__(self):
+        super().__init__()
+
+    def perform(self, protocol: str, file: str):
+        proxies = FileProxyList(protocol, file, conn=self.parent.db_conn)
         proxies.load()
+
+
+class ProxiesCommand(Command):
+    """The proxy management command."""
+    name = 'proxy'
+
+    def __init__(self, parent: str = None):
+        super().__init__(parent)
+        self.enable_exit_handler()
+
+        # Connect to the database.
+        self.db_conn = MySQLConnection(**config.db_conn())
+
+        # Add default actions.
+        self.add_action(FetchAction())
+        self.add_action(RefreshAction())
+        self.add_action(ImportAction())
+
+    def _exit_handler(self):
+        # Ensure we close the database connection.
+        if self.db_conn is not None:
+            self.db_conn.close()
+            self.db_conn = None
 
 
 if __name__ == '__main__':
     command = ProxiesCommand()
     command.run()
-    exit(0)
-
-    # TODO: Handle default arguments.
-    # Check if we have an argument.
-    command = 'fetch'
-    if len(sys.argv) > 1:
-        command = sys.argv[1].lower()
-
-    match command:
-        case 'fetch':
-            # Check if we have forced a provider.
-            prov = None
-            if len(sys.argv) > 2:
-                prov = [sys.argv[2].lower()]
-
-            # Fetch new proxies.
-            fetch_proxies(prov)
-        case 'refresh':
-            # Refresh our current list of proxies.
-            refresh_proxies()
-        case 'import':
-            # Import a list from a file.
-            if len(sys.argv) < 4:
-                usage(sys.stderr)
-                exit(1)
-            import_proxies(sys.argv[2].lower(), sys.argv[3])
-        case 'help':
-            usage()
-        case _:
-            # We don't know what you've requested.
-            print('Invalid command.\n', file=sys.stderr)
-            usage(sys.stderr)
-            exit(1)
