@@ -42,6 +42,14 @@ scraping_pool = ScrapingPool(
     max_instances=int(config.app('scraper')['max_instances']))
 
 
+def get_logger(subsystem: str) -> Logger:
+    """Gets the logger from the request context. Will not override the subsystem
+    if a logger is already in the context."""
+    if 'logger' not in g:
+        g.logger = root_logger.for_subsystem(subsystem)
+    return g.logger
+
+
 def connect_db() -> MySQLConnection | PooledMySQLConnection:
     """Connects to the database and stores the connection in the global
     application context."""
@@ -69,8 +77,7 @@ def handle_title_exception(exc: TitledException):
 @app.errorhandler(mysql.connector.errors.Error)
 def handle_mysql_exception(exc: mysql.connector.errors.Error):
     """Handles uncaught database exceptions."""
-    # TODO: Get request context logger.
-    logger = root_logger.for_subsystem('mysql_exception')
+    logger = get_logger('mysql_exception')
     return handle_title_exception(DatabaseError(exc, context={
         'req_uuid': request_uuid()
     }, logger=logger))
@@ -81,16 +88,13 @@ def is_authenticated() -> bool:
     return 'user_id' in g
 
 
-def authenticate(username: str, password: str = None, auth_token: str = None,
-                 logger: Logger = None) -> Optional[int]:
+def authenticate(username: str, password: str = None,
+                 auth_token: str = None) -> Optional[int]:
     """Authenticates the user based on the provided credentials."""
-    # Check if we have cached the user ID.
+    # Check if we have cached the user ID and get a logger for us.
     if is_authenticated():
         return user_id()
-
-    # Get a logger for us.
-    if logger is None:
-        logger = root_logger.for_subsystem('auth')
+    logger = get_logger('auth')
 
     # Perform a bunch of sanity checks.
     if username is None and password is None and auth_token is None:
@@ -184,8 +188,7 @@ def authenticate(username: str, password: str = None, auth_token: str = None,
     return g.user_id
 
 
-def http_authenticate(use_secrets: str | tuple[str, ...],
-                      logger: Logger = None) -> Optional[int]:
+def http_authenticate(use_secrets: str | tuple[str, ...]) -> Optional[int]:
     """Authentication workflow for an HTTP request."""
     # Check if we have cached the user ID.
     if 'user_id' in g:
@@ -196,8 +199,7 @@ def http_authenticate(use_secrets: str | tuple[str, ...],
         use_secrets = (use_secrets,)
 
     # Get a logger for us.
-    if logger is None:
-        logger = root_logger.for_subsystem('auth.http')
+    logger = get_logger('auth.http')
 
     # Check if we have the authentication key to work with.
     auth_key = request.args.get('auth')
@@ -228,12 +230,12 @@ def http_authenticate(use_secrets: str | tuple[str, ...],
     err = None
     if 'password' in use_secrets:
         try:
-            return authenticate(username, password=secret, logger=logger)
+            return authenticate(username, password=secret)
         except TitledException as e:
             err = e
     if 'auth_token' in use_secrets:
         try:
-            return authenticate(username, auth_token=secret, logger=logger)
+            return authenticate(username, auth_token=secret)
         except TitledException as e:
             err = e
 
@@ -280,7 +282,7 @@ def request_uuid() -> str:
     return g.req_uuid
 
 
-def log_http_request(logger: Logger):
+def log_http_request(logger: Logger = None):
     """Logs everything about an HTTP request."""
     # Ensure the logger has our request UUID.
     logger.uuid = request_uuid()
@@ -331,17 +333,15 @@ def ping_pong():
 
 @app.route('/track/<carrier_id>/<code>')
 async def track(carrier_id: str, code: str, force: bool = False,
-                carrier: BaseCarrier = None, logger: Logger = None):
+                carrier: BaseCarrier = None):
     """Tracks the history of a parcel given a carrier ID and a tracking code."""
     # Get a logger for us.
-    is_new_logger = logger is None
-    if is_new_logger:
-        logger = root_logger.for_subsystem('track.carrier_and_code')
-        log_http_request(logger)
+    logger = get_logger('track.carrier_and_code')
+    log_http_request(logger)
 
     # Check if we are authorized.
-    http_authenticate('auth_token', logger=logger)
-    if is_new_logger:
+    http_authenticate('auth_token')
+    if logger.subsystem == 'track.carrier_and_code':
         logger.debug('user_track_parcel',
                      f'User {logged_username()} trying to track parcel '
                      f'{carrier_id} {code}')
@@ -495,11 +495,11 @@ async def track(carrier_id: str, code: str, force: bool = False,
 async def track_id(parcel_slug: str, force: bool = False):
     """Tracks the history of a parcel given a parcel ID."""
     # Get a logger for us.
-    logger = root_logger.for_subsystem('track.slug')
+    logger = get_logger('track.slug')
     log_http_request(logger)
 
     # Check if we are authorized.
-    http_authenticate('auth_token', logger=logger)
+    http_authenticate('auth_token')
     logger.debug('user_track_parcel',
                  f'User {logged_username()} trying to track a parcel using '
                  f'slug {parcel_slug}')
@@ -569,7 +569,7 @@ async def track_id(parcel_slug: str, force: bool = False):
 
     # Fetch some fresh (or cached) information about this parcel.
     return await track(carrier.uid, carrier.tracking_code, force=force,
-                       carrier=carrier, logger=logger)
+                       carrier=carrier)
 
 
 @app.route('/register', methods=['POST'])
@@ -579,7 +579,7 @@ def register():
     password = request.form['password']
 
     # Get a logger for us.
-    logger = root_logger.for_subsystem('user_register')
+    logger = get_logger('user_register')
     log_http_request(logger)
 
     # Check if we are accepting registrations.
@@ -657,14 +657,14 @@ def create_auth_token(description: str = None, username: str = None,
                       password: str = None):
     """Creates a new authentication token for a user."""
     # Get a logger for us.
-    logger = root_logger.for_subsystem('auth_token.new')
+    logger = get_logger('auth_token.new')
     log_http_request(logger)
 
     # Authenticate using the username and password first.
     if username is None:
-        http_authenticate('password', logger=logger)
+        http_authenticate('password')
     else:
-        authenticate(username, password, logger=logger)
+        authenticate(username, password)
 
     # Get the description.
     if description is None:
@@ -708,13 +708,13 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
                       password: str = None, auth_token: str = None):
     """Revokes an authentication token of a user."""
     # Get a logger for us.
-    logger = root_logger.for_subsystem('auth_token.revoke')
+    logger = get_logger('auth_token.revoke')
     log_http_request(logger)
 
     if username is None:
-        http_authenticate(('password', 'auth_token'), logger=logger)
+        http_authenticate(('password', 'auth_token'))
     else:
-        authenticate(username, password, auth_token, logger=logger)
+        authenticate(username, password, auth_token)
 
     # Check if the authentication token to revoke actually exists.
     conn = connect_db()
@@ -753,11 +753,11 @@ def revoke_auth_token(revoke_token: str = None, username: str = None,
 def save_parcel(carrier_id: str, code: str, archived: bool = False):
     """Stores a parcel into the user's tracked parcels list."""
     # Get a logger for us.
-    logger = root_logger.for_subsystem('parcel_save.carrier_and_code')
+    logger = get_logger('parcel_save.carrier_and_code')
     log_http_request(logger)
 
     # Check if we are authorized.
-    http_authenticate('auth_token', logger=logger)
+    http_authenticate('auth_token')
 
     # Check if we have a valid tracking code.
     if not BaseCarrier.is_tracking_code_valid(code):
@@ -784,13 +784,12 @@ def save_parcel(carrier_id: str, code: str, archived: bool = False):
             status_code=422)
 
     # Delegate the operation.
-    return save_parcel_id(row[1], row[2], archived, parcel_id=int(row[0]),
-                          logger=logger)
+    return save_parcel_id(row[1], row[2], archived, parcel_id=int(row[0]))
 
 
 @app.route('/save/<parcel_slug>', methods=['POST', 'DELETE'])
 def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
-                   parcel_id: int = None, logger: Logger = None):
+                   parcel_id: int = None):
     """Stores a parcel into the user's tracked parcels list."""
     # Get the name of the saved parcel.
     if name is None:
@@ -803,12 +802,11 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
             status_code=422)
 
     # Get a logger for us.
-    if logger is None:
-        logger = root_logger.for_subsystem('parcel_save.slug')
-        log_http_request(logger)
+    logger = get_logger('parcel_save.slug')
+    log_http_request(logger)
 
     # Check if we are authorized.
-    http_authenticate('auth_token', logger=logger)
+    http_authenticate('auth_token')
 
     # Check if parcel slug is valid.
     if not BaseCarrier.is_slug_valid(parcel_slug):
@@ -908,11 +906,11 @@ def save_parcel_id(parcel_slug: str, name: str = None, archived: bool = False,
 def archive_flag_parcel(parcel_slug: str):
     """Marks a saved parcel as archived or not."""
     # Get a logger for us.
-    logger = root_logger.for_subsystem('parcel_archive.slug')
+    logger = get_logger('parcel_archive.slug')
     log_http_request(logger)
 
     # Check if we are authorized.
-    http_authenticate('auth_token', logger=logger)
+    http_authenticate('auth_token')
 
     # Check if parcel slug is valid.
     if not BaseCarrier.is_slug_valid(parcel_slug):
@@ -993,11 +991,11 @@ def list_parcels():
     }
 
     # Get a logger for us.
-    logger = root_logger.for_subsystem('parcel_list')
+    logger = get_logger('parcel_list')
     log_http_request(logger)
 
     # Check if we are authorized.
-    http_authenticate('auth_token', logger=logger)
+    http_authenticate('auth_token')
 
     # Get the list of the user's parcels from the database.
     conn = connect_db()
