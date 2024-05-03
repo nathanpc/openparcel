@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import atexit
+import inspect
+import os
 import sys
 from typing import TextIO, TypeVar, Any
 
 # Typing hints.
 TCommand = TypeVar('TCommand', bound='Command')
+TManager = TypeVar('TManager', bound='Manager')
 
 
 class Argument:
@@ -104,7 +107,7 @@ class Action:
 
     def usage_long(self, padding: int = 0) -> str:
         """How this argument should be represented in the usage message."""
-        return f'\t{self.usage_short().ljust(padding)} -  {self.description}.'
+        return f'    {self.usage_short().ljust(padding)} -  {self.description}.'
 
     def argnum(self) -> int:
         """Gets the number of arguments passed to the action."""
@@ -158,8 +161,8 @@ class Command:
 
         cls.__init__ = init_decorator(cls.__init__)
 
-    def __init__(self, parent: str = None):
-        self.parent: str = parent
+    def __init__(self, parent: TManager = None):
+        self.parent: Manager = parent
         self.actions: list[Action] = []
 
     def _post_init_(self):
@@ -190,7 +193,7 @@ class Command:
             exit(1)
 
         # Perform the requested action.
-        req_action = sys.argv[1].lower()
+        req_action = self.arg(0).lower()
         for action in self.actions:
             if action.name == req_action:
                 action.perform_from_cli()
@@ -211,7 +214,7 @@ class Command:
         # Define the correct usage name pattern.
         command = sys.argv[0]
         if self.parent is not None:
-            command = f'{self.parent} {command}'
+            command = f'{self.parent.name} {self.name}'
 
         # Get the actions padding.
         padding = 0
@@ -232,11 +235,16 @@ class Command:
 
     def usage_long(self, padding: int = 0) -> str:
         """How this argument should be represented in the manager usage."""
-        return f'\t{self.usage_short().ljust(padding)}  -  {self.description}.'
+        return (f'    {self.usage_short().ljust(padding)}  -  '
+                f'{self.description}.')
 
     def enable_exit_handler(self):
         """This command uses an exit handler."""
         atexit.register(self._exit_handler)
+
+    def arg(self, index: int) -> str:
+        """Returns the argument at an index starting after the command."""
+        return sys.argv[self._arg_index(index)]
 
     def argnum(self) -> int:
         """Gets the number of arguments passed to the command."""
@@ -244,6 +252,83 @@ class Command:
             return len(sys.argv) - 2
         return len(sys.argv) - 1
 
+    def _arg_index(self, index: int) -> int:
+        """Calculates the argument index starting after the command."""
+        return index + (1 if self.parent is None else 2)
+
     def _exit_handler(self):
         """Performs a couple of important tasks before exiting the program."""
         raise NotImplementedError
+
+
+class Manager:
+    description: str = 'The openparcel manager script'
+
+    def __init__(self):
+        self.name: str = sys.argv[0]
+        self.commands: list[Command] = []
+
+        # Populate our available commands.
+        self.populate_commands()
+
+    def run(self):
+        """Runs the manager from the command line."""
+        # Check if we were called without any commands.
+        if len(sys.argv) == 1:
+            self.usage(sys.stderr)
+            exit(1)
+
+        # Perform the requested command.
+        req_command = sys.argv[1].lower()
+        for cmd in self.commands:
+            if cmd.name == req_command:
+                cmd.run()
+                return
+
+        # Looks like it was an invalid command.
+        print(f'Unknown command {req_command}.\n', file=sys.stderr)
+        self.usage(sys.stderr)
+        exit(1)
+
+    def append_command(self, command: Command):
+        """Appends a command to the manager."""
+        self.commands.append(command)
+
+    def populate_commands(self):
+        """Populates the list of commands we have available."""
+        # Load the command modules.
+        self._load_modules()
+
+        # Go through the modules looking for the commands.
+        for filename, file_obj in inspect.getmembers(sys.modules[__name__]):
+            if inspect.ismodule(file_obj):
+                # Go through the members of the modules.
+                for class_name, mod_obj in inspect.getmembers(file_obj):
+                    # Check if it's actually a command class.
+                    if (inspect.isclass(mod_obj) and class_name != 'Command' and
+                            issubclass(mod_obj, Command)):
+                        self.append_command(mod_obj(self))
+
+    def usage(self, out: TextIO = sys.stdout):
+        """Prints a message on how to use this manager."""
+        # Get the actions padding.
+        padding = 0
+        for cmd in self.commands:
+            if len(cmd.usage_short()) > padding:
+                padding = len(cmd.usage_short())
+
+        # Print out the usage message.
+        print(f'usage: {sys.argv[0]} command [action] [options]', file=out)
+        print(file=out)
+        print('Available commands:', file=out)
+        for cmd in self.commands:
+            print(cmd.usage_long(padding), file=out)
+
+    @staticmethod
+    def _load_modules():
+        """Loads all the scripts modules."""
+        for module in os.listdir(os.path.dirname(__file__)):
+            if module == '__init__.py' or module[-3:] != '.py':
+                continue
+            __import__(f'{sys.modules[__name__].__name__}.{module[:-3]}',
+                       locals(), globals())

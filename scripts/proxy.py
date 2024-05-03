@@ -10,7 +10,7 @@ from requests import HTTPError
 import config
 import openparcel
 from openparcel.proxies import Proxy, FileProxyList
-from scripts import Command, Argument, Action
+from scripts import Command, Argument, Action, Manager
 
 
 class FetchAction(Action):
@@ -83,7 +83,7 @@ class ProxiesCommand(Command):
     name = 'proxy'
     description = 'Manages our proxies and the proxy list'
 
-    def __init__(self, parent: str = None):
+    def __init__(self, parent: Manager = None):
         super().__init__(parent)
         self.enable_exit_handler()
 

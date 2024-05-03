@@ -8,7 +8,7 @@ from Crypto.Cipher import AES
 from Crypto.Util import Counter
 
 import config
-from scripts import Command, Action
+from scripts import Command, Action, Manager
 
 
 class InputLineStream:
@@ -116,7 +116,7 @@ class RequestBundleCommand(Command):
     name = 'reqbundle'
     description = 'Deals with carrier request bundles'
 
-    def __init__(self, parent: str = None):
+    def __init__(self, parent: Manager = None):
         super().__init__(parent)
 
         # Load key from configuration.
