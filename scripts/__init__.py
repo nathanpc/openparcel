@@ -3,11 +3,7 @@ import atexit
 import inspect
 import os
 import sys
-from typing import TextIO, TypeVar, Any
-
-# Typing hints.
-TCommand = TypeVar('TCommand', bound='Command')
-TManager = TypeVar('TManager', bound='Manager')
+from typing import TextIO, Any
 
 
 class Argument:
@@ -39,7 +35,7 @@ class Action:
     arguments: list[Argument] = None
     default: bool = False
 
-    def __init__(self, parent: TCommand = None):
+    def __init__(self, parent: 'Command' = None):
         self.parent = parent
 
     def perform(self, *args, **kwargs):
@@ -161,7 +157,7 @@ class Command:
 
         cls.__init__ = init_decorator(cls.__init__)
 
-    def __init__(self, parent: TManager = None):
+    def __init__(self, parent: 'Manager' = None):
         self.parent: Manager = parent
         self.actions: list[Action] = []
 

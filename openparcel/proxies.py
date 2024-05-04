@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from operator import itemgetter
 from threading import Lock
-from typing import Mapping, TypeVar, Type
+from typing import Mapping, Type
 
 import requests
 import DrissionPage.errors
@@ -20,9 +20,6 @@ from mysql.connector import MySQLConnection
 import config
 from openparcel.carriers import carriers
 from openparcel.exceptions import ScrapingReturnedError
-
-# Typing hints.
-TProxy = TypeVar('TProxy', bound='Proxy')
 
 
 class Proxy:
@@ -47,7 +44,7 @@ class Proxy:
             self.valid_carriers = []
 
     @staticmethod
-    def list(conn: MySQLConnection) -> list[TProxy]:
+    def list(conn: MySQLConnection) -> list['Proxy']:
         """Gets the entire list of available proxies."""
         proxies = []
 
@@ -60,7 +57,7 @@ class Proxy:
         return proxies
 
     @staticmethod
-    def from_row(row: tuple, conn: MySQLConnection = None) -> TProxy:
+    def from_row(row: tuple, conn: MySQLConnection = None) -> 'Proxy':
         """Builds up a Proxy object from a database row."""
         return Proxy(db_id=row[0], addr=row[1], port=row[2], country=row[3],
                      speed=row[4], protocol=row[5], active=bool(row[6]),
