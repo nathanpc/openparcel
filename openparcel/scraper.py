@@ -6,6 +6,7 @@ import traceback
 from enum import Enum
 
 from openparcel.carriers.base import BrowserBaseCarrier
+from openparcel.exceptions import ScrapingReturnedError
 from openparcel.logger import Logger
 
 
@@ -58,16 +59,11 @@ class ScrapeOperation:
             # Start scraping!
             self.set_state(ScrapeOperation.State.FETCHING)
             self.base_parcel.fetch()
+        except ScrapingReturnedError as e:
+            self.store_exception(e, log=(e.code != 'ParcelNotFound' and
+                                         e.code != 'InvalidTrackingCode'))
         except Exception as e:
-            # Capture the exception state.
-            self.original_traceback = traceback.format_exc()
-            self.exception_raised = e
-
-            # Log the incident.
-            self.logger.warning(f'{self.scraper_name}.async_fetch_exception',
-                                'An exception occurred while fetching a '
-                                'parcel within the scraper\'s thread',
-                                {'traceback': self.original_traceback})
+            self.store_exception(e, log=True)
 
         # Flag the fetching as finished.
         self.logger.debug(f'{self.scraper_name}.fetched',
@@ -106,6 +102,19 @@ class ScrapeOperation:
 
         # Since this history has just been fetched it's not cached.
         parcel.cached = False
+
+    def store_exception(self, exc: Exception, log: bool = True):
+        """Captures a thrown exception and stores it to be recalled later."""
+        # Capture the exception state.
+        self.original_traceback = traceback.format_exc()
+        self.exception_raised = exc
+
+        # Log the incident.
+        if log:
+            self.logger.warning(f'{self.scraper_name}.async_fetch_exception',
+                                'An exception occurred while fetching a '
+                                'parcel within the scraper\'s thread',
+                                {'traceback': self.original_traceback})
 
     def set_state(self, state: State):
         """Sets the current state of the scraping operation."""
