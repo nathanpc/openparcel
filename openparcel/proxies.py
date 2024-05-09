@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from operator import itemgetter
 from threading import Lock
-from typing import Mapping, Type
+from typing import Mapping, Type, List
 
 import requests
 import DrissionPage.errors
@@ -27,8 +27,7 @@ class Proxy:
 
     def __init__(self, addr: str, port: int, country: str, speed: int,
                  protocol: str, active: bool = True, db_id: int = None,
-                 valid_carriers: list[dict] = None,
-                 conn: MySQLConnection = None):
+                 valid_carriers: dict = None, conn: MySQLConnection = None):
         self.db_id: int = db_id
         self.addr: str = addr
         self.port: int = port
@@ -36,15 +35,15 @@ class Proxy:
         self.speed: int = speed
         self.protocol: str = protocol.lower()
         self.active: bool = active
-        self.valid_carriers: list[dict] = valid_carriers
+        self.valid_carriers: dict = valid_carriers
         self.conn: MySQLConnection = conn
 
         # Ensure we always have an empty list of valid carriers.
         if self.valid_carriers is None:
-            self.valid_carriers = []
+            self.valid_carriers = {}
 
     @staticmethod
-    def list(conn: MySQLConnection) -> list['Proxy']:
+    def list(conn: MySQLConnection) -> List['Proxy']:
         """Gets the entire list of available proxies."""
         proxies = []
 
@@ -54,6 +53,26 @@ class Proxy:
         for row in cur:
             proxies.append(Proxy.from_row(row, conn=conn))
         cur.close()
+
+        return proxies
+
+    @staticmethod
+    def for_carrier(conn: MySQLConnection, carrier_id: str) -> List['Proxy']:
+        """Gets a list of available proxies for a given carrier."""
+        proxies = []
+
+        # Get the list from the database.
+        cur = conn.cursor()
+        cur.execute(
+            f'SELECT *, JSON_VALUE(carriers, \'$.{carrier_id}.timing\') timing '
+            'FROM proxies WHERE (active = %s) '
+            f' AND JSON_CONTAINS_PATH(carriers, \'one\', \'$.{carrier_id}\') '
+            f' AND JSON_VALUE(carriers, \'$.{carrier_id}.enabled\' RETURNING '
+            '  UNSIGNED) = 1 ORDER BY timing', (True,))
+        for row in cur:
+            proxies.append(Proxy.from_row(row, conn=conn))
+        cur.close()
+
         return proxies
 
     @staticmethod
@@ -66,7 +85,7 @@ class Proxy:
     def test(self) -> bool:
         """Perform a cursory test of the proxy server."""
         # Ensure we have a clean slate.
-        self.valid_carriers = []
+        self.valid_carriers = {}
 
         # Go through available carriers.
         for carrier in carriers():
@@ -81,9 +100,8 @@ class Proxy:
                 # Set up the carrier and proxy settings.
                 carrier = carrier(code)
                 carrier.set_proxy(self)
-                print(f'Testing proxy {self.as_str()} '
-                      f'({round(self.speed / 1000)}) from {self.country} '
-                      f'with {carrier.name}...', end=' ')
+                print(f'Testing proxy {self} ({round(self.speed / 1000)}) from '
+                      f'{self.country} with {carrier.name}...', end=' ')
 
                 # Try to scrape the website.
                 start_time = time.time()
@@ -92,10 +110,10 @@ class Proxy:
                 # By some miracle we've hit a valid tracking code!
                 speed = round((time.time() - start_time) * 1000)
                 print(f'{speed} ms')
-                self.valid_carriers.append({
-                    'id': carrier.uid,
-                    'timing': speed
-                })
+                self.valid_carriers[carrier.uid] = {
+                    'timing': speed,
+                    'enabled': True
+                }
             except ScrapingReturnedError as e:
                 # Check which kind of scraping error occurred.
                 match e.code:
@@ -111,10 +129,10 @@ class Proxy:
                         # Looks like it is a valid proxy!
                         speed = round((time.time() - start_time) * 1000)
                         print(f'{speed} ms')
-                        self.valid_carriers.append({
-                            'id': carrier.uid,
-                            'timing': speed
-                        })
+                        self.valid_carriers[carrier.uid] = {
+                            'timing': speed,
+                            'enabled': True
+                        }
                         continue
 
                 # Something unexpected just happened.
@@ -123,14 +141,15 @@ class Proxy:
                 print('FAILED')
 
         # Is this proxy completely dead?
-        if len(self.valid_carriers) == 0:
+        if len(self.valid_carriers.keys()) == 0:
             return False
 
         # Compute the average time it took to perform the requests.
-        self.speed = round(sum(it['timing'] for it in self.valid_carriers) /
-                           len(self.valid_carriers))
-        print(f'Proxy {self.as_str()} has an average speed of {self.speed}',
-              end='\n\n', flush=True)
+        self.speed = round(
+            sum(it['timing'] for it in self.valid_carriers.values()) /
+            len(self.valid_carriers.values()))
+        print(f'Proxy {self} has an average speed of {self.speed}', end='\n\n',
+              flush=True)
 
         return True
 
@@ -157,7 +176,7 @@ class Proxy:
             raise AssertionError('Database not available for saving')
 
         # Check if a refresh failed.
-        if len(self.valid_carriers) == 0:
+        if len(self.valid_carriers.keys()) == 0:
             self.active = False
 
         # Insert or update database record?
@@ -183,6 +202,9 @@ class Proxy:
 
     def as_str(self) -> str:
         """String representation of the proxy, ready to be used."""
+        return self.__str__()
+
+    def __str__(self) -> str:
         return f'{self.protocol}://{self.addr}:{self.port}'
 
 
@@ -193,7 +215,7 @@ class ProxyList:
     def __init__(self, api_key: str = None, auto_save: bool = True,
                  conn: MySQLConnection = None,
                  headers: Mapping[str, str | bytes] = None,
-                 test_workers: int = 8):
+                 test_workers: int = 4):
         self.list: list[Proxy] = []
         self.conn: MySQLConnection = conn
         self.auto_save: bool = auto_save
