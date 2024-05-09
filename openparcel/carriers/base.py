@@ -41,11 +41,16 @@ class BaseCarrier:
         self.slug: Optional[str] = None
         self.parcel_name: Optional[str] = None
         self.archived: bool = False
+        self.proxy: Optional['Proxy'] = None
         self._resp_dict: Optional[dict] = None
 
         # Check if the tracking code is valid before proceeding.
         if not BaseCarrier.is_tracking_code_valid(self.tracking_code):
             raise TrackingCodeInvalid()
+
+    def set_proxy(self, proxy: 'Proxy'):
+        """Sets the proxy server to be used for scraping."""
+        self.proxy = proxy
 
     def get_tracking_url(self) -> str:
         """Gets the tracking URL for the carrier based on the available
@@ -174,16 +179,13 @@ class BrowserBaseCarrier(BaseCarrier):
 
     def __init__(self, tracking_code: str = None):
         super().__init__(tracking_code)
-        self.proxy: Optional['Proxy'] = None
         self.page: Optional[ChromiumPage] = None
         self.base_timeout: float = 10
 
     def set_proxy(self, proxy: 'Proxy'):
-        """Sets the proxy server for the scraping browser."""
         if self.page is not None:
             raise RuntimeError('Cannot set the proxy of a running browser')
-
-        self.proxy = proxy
+        super().set_proxy(proxy)
 
     def debug_print(self, message: str, fail_silent: bool = False):
         """Prints a message in the scraped page's debug window."""

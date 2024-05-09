@@ -5,13 +5,17 @@ import os
 import errno
 import traceback
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import DrissionPage.errors
 import mysql.connector.errors
 from werkzeug.exceptions import InternalServerError
 
 from openparcel.logger import Logger, LoggerNotFound
+
+# Ensure we have modules available only for type checking.
+if TYPE_CHECKING:
+    from openparcel.carriers import BaseCarrier
 
 
 class TitledException(Exception):
@@ -138,6 +142,29 @@ class DatabaseError(TitledException):
                  })
 
 
+class NoProxiesFoundError(TitledException):
+    """No proxies are available for a given carrier."""
+
+    def __init__(self, carrier: 'BaseCarrier',
+                 title: str = 'No proxies available',
+                 message: str = 'None of our proxy servers are capable of '
+                                'getting the tracking information from this '
+                                'carrier currently. We have been notified and '
+                                'are currently working on a solution.',
+                 logger: Logger = None):
+        super().__init__(title, message, 424, logger=logger)
+
+        # Log the incident.
+        self.log(logging.ERROR, 'proxy_not_found',
+                 'No suitable proxy server could be found for the carrier '
+                 f'{carrier.name} ({carrier.uid})',
+                 context={
+                     'carrier': carrier.as_dict(),
+                     'traceback': traceback.format_exc()
+                 })
+        self.data: dict = carrier.as_dict()
+
+
 class ScrapingReturnedError(TitledException):
     """Error raised when the scraping script failed to scrape the website in a
     predictable manner and reported on it."""
@@ -189,8 +216,8 @@ class ScrapingBrowserError(TitledException):
     """Error raised when the scraping browser raises an exception and crashes.
     These are usually caused by an unexpected issue while scraping."""
 
-    def __init__(self, err: DrissionPage.errors.BaseError, carrier,
-                 logger: Logger):
+    def __init__(self, err: DrissionPage.errors.BaseError,
+                 carrier: 'BaseCarrier', logger: Logger):
         super().__init__(
             title='Scraping error',
             message='An error occurred while trying to fetch the tracking '

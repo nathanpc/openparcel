@@ -24,7 +24,9 @@ from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError,
-                                   TrackingCodeInvalid, ServerOverwhelmedError, DatabaseError, TitledInternalServerError)
+                                   TrackingCodeInvalid, ServerOverwhelmedError, DatabaseError, NoProxiesFoundError,
+                                   TitledInternalServerError)
+from openparcel.proxies import Proxy
 from openparcel.scraper import ScrapingPool, DuplicateScrapingOperation
 
 # Get our application's logger instance.
@@ -326,6 +328,18 @@ def should_refresh_parcel(parcel: BaseCarrier, timediff: float,
     return force or (not parcel.archived and abs(timediff) >= timeout)
 
 
+def get_proxy(carrier: BaseCarrier) -> Proxy:
+    """Gets a randomly selected proxy to use in order to scrape a given
+    carrier's website."""
+    # Get list and check if we have exhausted all available for this carrier.
+    proxies = Proxy.for_carrier(connect_db(), carrier.uid)
+    if len(proxies) == 0:
+        raise NoProxiesFoundError(carrier, logger=get_logger('proxy_get'))
+
+    # Select a proxy from the list at random.
+    return random.choice(proxies)
+
+
 @app.route('/')
 def hello_world():
     return 'OpenParcel'
@@ -444,6 +458,13 @@ async def track(carrier_id: str, code: str, force: bool = False,
 
     # Fetch tracking history.
     try:
+        # Set up a proxy if enabled.
+        if config.proxy('use_proxies'):
+            proxy = get_proxy(carrier)
+            carrier.set_proxy(proxy)
+            logger.info('parcel_proxy', f'Will use proxy server {proxy} while '
+                                        f'scraping parcel {carrier_id} {code}')
+
         # Fetch tracking history.
         prefetch_now = datetime.datetime.now(datetime.UTC)
         op = await scraping_pool.fetch(carrier, local_logger=logger)

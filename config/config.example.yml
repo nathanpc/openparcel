@@ -13,6 +13,7 @@ app:
   allow_registration: true
   request_bundle_key: 'please change me'
 proxy:
+  use_proxies: false
   api_keys:
     pubproxy: 'delete this line if not using PubProxy'
     proxifly: 'delete this line if not using Proxifly'
