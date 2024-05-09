@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import logging
 import os
 import errno
@@ -8,6 +9,7 @@ from typing import Optional
 
 import DrissionPage.errors
 import mysql.connector.errors
+from werkzeug.exceptions import InternalServerError
 
 from openparcel.logger import Logger, LoggerNotFound
 
@@ -95,6 +97,24 @@ class ServerOverwhelmedError(TitledException, TimeoutError):
             'context': context,
             'traceback': traceback.format_exc()
         })
+
+
+class TitledInternalServerError(TitledException):
+    """A titled version of teh internal server error exception."""
+
+    def __init__(self, exc: InternalServerError, logger: Logger = None):
+        super().__init__('Server error',
+                         'An internal server error occurred. We have been '
+                         'notified and are currently working on a solution.',
+                         500, logger=logger)
+
+        # Log the incident.
+        exc = exc.original_exception
+        self.log(logging.ERROR, 'uncaught_exception',
+                 f'{exc.__class__.__name__}: {exc}',
+                 context={
+                     'traceback': traceback.format_exc()
+                 })
 
 
 class DatabaseError(TitledException):

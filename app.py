@@ -16,6 +16,7 @@ import mysql.connector.errors
 from flask import Flask, request, g
 from mysql.connector import MySQLConnection
 from mysql.connector.pooling import MySQLConnectionPool, PooledMySQLConnection
+from werkzeug.exceptions import InternalServerError
 
 import config
 import openparcel.carriers as carriers
@@ -23,7 +24,7 @@ from openparcel.logger import Logger
 from openparcel.carriers import BaseCarrier
 from openparcel.exceptions import (NotEnoughParameters, AuthenticationFailed,
                                    TitledException, ScrapingBrowserError,
-                                   TrackingCodeInvalid, ServerOverwhelmedError, DatabaseError)
+                                   TrackingCodeInvalid, ServerOverwhelmedError, DatabaseError, TitledInternalServerError)
 from openparcel.scraper import ScrapingPool, DuplicateScrapingOperation
 
 # Get our application's logger instance.
@@ -72,6 +73,14 @@ def handle_title_exception(exc: TitledException):
     """Handles uncaught exceptions that were made to provide a response to the
     user."""
     return exc.resp_dict(req_uuid=request_uuid()), exc.status_code
+
+
+@app.errorhandler(InternalServerError)
+def handle_uncaught_exceptions(exc: InternalServerError):
+    """Deals with all uncaught exceptions that weren't handled by other error
+    handlers."""
+    logger = get_logger('internal_server_error')
+    return handle_title_exception(TitledInternalServerError(exc, logger=logger))
 
 
 @app.errorhandler(mysql.connector.errors.Error)
