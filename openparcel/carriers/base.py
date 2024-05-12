@@ -17,6 +17,7 @@ from DrissionPage.errors import WaitTimeoutError, JavaScriptError
 
 from openparcel.exceptions import (TrackingCodeNotFound, ScrapingJsNotFound,
                                    ScrapingReturnedError, TrackingCodeInvalid)
+from openparcel.internal_utils import is_datetime_aware
 
 # Ensure we have modules available only for type checking.
 if TYPE_CHECKING:
@@ -73,6 +74,11 @@ class BaseCarrier:
 
     def created_delta(self) -> datetime.timedelta:
         """Gets the time delta between when the parcel was created and now."""
+        # Check if we should be offset-aware.
+        if is_datetime_aware(self.created):
+            return datetime.datetime.now(datetime.UTC) - self.created
+
+        # Operate on offset-naive datetime objects.
         return datetime.datetime.now() - self.created
 
     def is_outdated(self) -> bool:
