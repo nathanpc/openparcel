@@ -366,7 +366,16 @@ class BrowserBaseCarrier(BaseCarrier):
                 'Alert from waiting for page to finish loading did not contain '
                 f'magic phrase. Got: {alert_text}')
 
-        return int(match.groups()[0])
+        # Check if we matched a browser error.
+        index = int(match.groups()[0])
+        if index < 0:
+            self.debug_print('A browser error was detected.', fail_silent=True)
+            raise ScrapingReturnedError({
+                'code': {'id': 6, 'name': 'BrowserError'},
+                'data': {'index': index}
+            })
+
+        return index
 
     def _wait_title_change(self, contains: str, timeout: float,
                            raise_err: bool = True):

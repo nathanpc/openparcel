@@ -189,19 +189,24 @@ class OpenParcel {
 		if (selectors === null)
 			throw new TypeError("Selectors to wait for must not be null");
 
+		// Builds a list of browser error selectors.
+		const browserErrorSelectors = [
+			"#main-frame-error.interstitial-wrapper"
+		];
+
 		// Checks for our elements of interest.
-		const checkForElements = function () {
+		const checkForElements = function (elemSelectors, errorSelectors) {
 			// Ensure no new iframes popped up.
 			observeIframes();
 
 			// Go through observers.
 			for (const obs of observers) {
 				// Go through querying the selectors of interest.
-				for (let i = 0; i < selectors.length; i++) {
-					if (obs.parentDocument.querySelector(selectors[i])) {
+				for (let i = 0; i < elemSelectors.length; i++) {
+					if (obs.parentDocument.querySelector(elemSelectors[i])) {
 						// Log the fact that we got one.
 						OpenParcel.debugLog("Selector found in page: " +
-							selectors[i]);
+							elemSelectors[i]);
 
 						// Disconnect all other observers.
 						observers.forEach(function (obs) {
@@ -213,6 +218,33 @@ class OpenParcel {
 
 						// Alert the parent script.
 						alert("READY! (" + i + ")");
+						return;
+					}
+				}
+
+				// Should we check for browser errors as well?
+				if ((errorSelectors === null) || ((obs.parentDocument !== document) &&
+					(obs.elem !== document.body))) {
+					continue;
+				}
+
+				// Go through querying the browser error selectors.
+				for (let i = 0; i < errorSelectors.length; i++) {
+					if (obs.parentDocument.querySelector(errorSelectors[i])) {
+						// Log the fact that we got one.
+						OpenParcel.debugLog("Error selector found: " +
+							errorSelectors[i]);
+
+						// Disconnect all other observers.
+						observers.forEach(function (obs) {
+							OpenParcel.debugLog("Disconnecting observer: ",
+								false);
+							obs.observer.disconnect();
+						});
+						tokenObserver.disconnect();
+
+						// Alert the parent script.
+						alert("READY! (" + -(i + 1) + ")");
 						return;
 					}
 				}
@@ -233,7 +265,7 @@ class OpenParcel {
 				elem: elem,
 				observer: new MutationObserver(function () {
 					// Check if the element was found.
-					checkForElements();
+					checkForElements(selectors, browserErrorSelectors);
 				})
 			});
 
@@ -263,7 +295,7 @@ class OpenParcel {
 		observeIframes();
 
 		// Check if any of the elements are already in the document.
-		checkForElements();
+		checkForElements(selectors, browserErrorSelectors);
 	}
 }
 
@@ -772,6 +804,10 @@ class ParcelError {
 		ProxyTimeout: {
 			id: 5,
 			name: "ProxyTimeout"
+		},
+		BrowserError: {
+			id: 6,
+			name: "BrowserError"
 		}
 	};
 
